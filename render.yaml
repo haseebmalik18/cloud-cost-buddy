@@ -1,0 +1,55 @@
+services:
+  - type: web
+    name: cloudcost-buddy-api
+    env: node
+    plan: starter
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+      - key: AWS_REGION
+        fromSecret: AWS_REGION
+      - key: AWS_ACCESS_KEY_ID
+        fromSecret: AWS_ACCESS_KEY_ID
+      - key: AWS_SECRET_ACCESS_KEY
+        fromSecret: AWS_SECRET_ACCESS_KEY
+      - key: AWS_ROLE_ARN
+        fromSecret: AWS_ROLE_ARN
+      - key: AZURE_CLIENT_ID
+        fromSecret: AZURE_CLIENT_ID
+      - key: AZURE_CLIENT_SECRET
+        fromSecret: AZURE_CLIENT_SECRET
+      - key: AZURE_TENANT_ID
+        fromSecret: AZURE_TENANT_ID
+      - key: AZURE_SUBSCRIPTION_ID
+        fromSecret: AZURE_SUBSCRIPTION_ID
+      - key: GCP_PROJECT_ID
+        fromSecret: GCP_PROJECT_ID
+      - key: GCP_BILLING_ACCOUNT_ID
+        fromSecret: GCP_BILLING_ACCOUNT_ID
+      - key: GOOGLE_APPLICATION_CREDENTIALS
+        fromSecret: GOOGLE_APPLICATION_CREDENTIALS
+      - key: FIREBASE_PROJECT_ID
+        fromSecret: FIREBASE_PROJECT_ID
+      - key: FIREBASE_PRIVATE_KEY
+        fromSecret: FIREBASE_PRIVATE_KEY
+      - key: FIREBASE_CLIENT_EMAIL
+        fromSecret: FIREBASE_CLIENT_EMAIL
+      - key: JWT_SECRET
+        generateValue: true
+      - key: LOG_LEVEL
+        value: info
+      - key: API_RATE_LIMIT_WINDOW_MS
+        value: 900000
+      - key: API_RATE_LIMIT_MAX_REQUESTS
+        value: 100
+      - key: COST_SPIKE_THRESHOLD_PERCENT
+        value: 20
+      - key: DAILY_SUMMARY_ENABLED
+        value: true
+      - key: WEEKLY_SUMMARY_ENABLED
+        value: true
