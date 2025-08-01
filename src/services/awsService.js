@@ -8,9 +8,19 @@ const logger = require('../utils/logger');
  * Handles AWS Cost Explorer and Budgets API integration with secure IAM role access
  */
 class AWSService {
-  constructor() {
-    this.region = process.env.AWS_REGION || 'us-east-1';
-    this.roleArn = process.env.AWS_ROLE_ARN;
+  constructor(userCredentials = null) {
+    // Use user credentials if provided, otherwise fall back to environment
+    if (userCredentials) {
+      this.region = userCredentials.region || 'us-east-1';
+      this.roleArn = userCredentials.roleArn;
+      this.externalId = userCredentials.externalId;
+      this.accountId = userCredentials.accountId;
+    } else {
+      // Legacy: use environment variables for single-tenant mode
+      this.region = process.env.AWS_REGION || 'us-east-1';
+      this.roleArn = process.env.AWS_ROLE_ARN;
+      this.accountId = process.env.AWS_ACCOUNT_ID;
+    }
     
     // Initialize clients with appropriate credentials
     this.initializeClients();
@@ -27,12 +37,19 @@ class AWSService {
 
       // Use IAM role if specified, otherwise use default credential chain
       if (this.roleArn) {
+        const assumeRoleParams = {
+          RoleArn: this.roleArn,
+          RoleSessionName: 'CloudCostBuddy-Session',
+          DurationSeconds: 3600, // 1 hour session
+        };
+        
+        // Add external ID if provided (for cross-account security)
+        if (this.externalId) {
+          assumeRoleParams.ExternalId = this.externalId;
+        }
+        
         credentialOptions.credentials = fromTemporaryCredentials({
-          params: {
-            RoleArn: this.roleArn,
-            RoleSessionName: 'CloudCostBuddy-Session',
-            DurationSeconds: 3600, // 1 hour session
-          },
+          params: assumeRoleParams,
         });
         logger.info(`AWS clients initialized with IAM role: ${this.roleArn}`);
       } else {
@@ -192,14 +209,15 @@ class AWSService {
    * @param {string} accountId - AWS Account ID
    * @returns {Array} Budget information
    */
-  async getBudgets(accountId) {
+  async getBudgets(accountId = null) {
     try {
-      if (!accountId) {
+      const targetAccountId = accountId || this.accountId;
+      if (!targetAccountId) {
         throw new Error('AWS Account ID is required for budget queries');
       }
 
       const command = new DescribeBudgetsCommand({
-        AccountId: accountId,
+        AccountId: targetAccountId,
       });
 
       const response = await this.budgetsClient.send(command);

@@ -3,6 +3,8 @@ const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
+const session = require('express-session');
+const SequelizeStore = require('connect-session-sequelize')(session.Store);
 require('dotenv').config();
 
 const logger = require('./utils/logger');
@@ -10,32 +12,51 @@ const errorHandler = require('./middleware/errorHandler');
 const requestId = require('./middleware/requestId');
 const { sanitizeInput } = require('./middleware/validators');
 const { recordMetrics, monitoringService } = require('./utils/monitoring');
+const authRoutes = require('./routes/auth');
+const accountRoutes = require('./routes/accounts');
 const awsRoutes = require('./routes/aws');
 const azureRoutes = require('./routes/azure');
 const gcpRoutes = require('./routes/gcp');
 const dashboardRoutes = require('./routes/dashboard');
 const alertRoutes = require('./routes/alerts');
+const { initializeDatabase } = require('./database/init');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Security middleware
+// Trust proxy configuration
+if (process.env.TRUST_PROXY === 'true') {
+  app.set('trust proxy', 1);
+}
+
+// Enhanced security middleware
 app.use(helmet({
-  contentSecurityPolicy: {
+  contentSecurityPolicy: process.env.ENABLE_CSP === 'true' ? {
     directives: {
       defaultSrc: ["'self'"],
       styleSrc: ["'self'", "'unsafe-inline'"],
       scriptSrc: ["'self'"],
       imgSrc: ["'self'", "data:", "https:"],
+      connectSrc: ["'self'", "https:"],
+      fontSrc: ["'self'", "https:", "data:"],
+      objectSrc: ["'none'"],
+      mediaSrc: ["'self'"],
+      frameSrc: ["'none'"],
     },
-  },
+  } : false,
+  hsts: process.env.ENABLE_HSTS === 'true' ? {
+    maxAge: 31536000,
+    includeSubDomains: true,
+    preload: true
+  } : false,
+  noSniff: true,
+  xssFilter: true,
+  referrerPolicy: { policy: "same-origin" }
 }));
 
 // CORS configuration for mobile app
 app.use(cors({
-  origin: process.env.NODE_ENV === 'production' 
-    ? ['https://cloudcostbuddy.app', 'https://app.cloudcostbuddy.com'] 
-    : ['http://localhost:3000', 'http://localhost:19006'], // Expo dev server
+  origin: ['https://cloudcostbuddy.app', 'https://app.cloudcostbuddy.com'],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization'],
@@ -71,6 +92,30 @@ app.use(morgan('combined', {
 // Body parsing middleware
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Session configuration
+const { sequelize } = require('./models');
+const sessionStore = new SequelizeStore({
+  db: sequelize,
+  tableName: 'sessions',
+  checkExpirationInterval: 15 * 60 * 1000, // 15 minutes
+  expiration: 24 * 60 * 60 * 1000 // 24 hours
+});
+
+app.use(session({
+  secret: process.env.SESSION_SECRET || (() => {
+    console.warn('SESSION_SECRET not set, using generated secret. Set SESSION_SECRET in production.');
+    return require('crypto').randomBytes(32).toString('hex');
+  })(),
+  store: sessionStore,
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    secure: process.env.NODE_ENV === 'production',
+    httpOnly: true,
+    maxAge: 24 * 60 * 60 * 1000 // 24 hours
+  }
+}));
 
 // Global input sanitization
 app.use(sanitizeInput);
@@ -111,6 +156,8 @@ app.get('/metrics', (req, res) => {
 });
 
 // API routes
+app.use('/api/auth', authRoutes);
+app.use('/api/accounts', accountRoutes);
 app.use('/api/aws', awsRoutes);
 app.use('/api/azure', azureRoutes);
 app.use('/api/gcp', gcpRoutes);
@@ -125,6 +172,8 @@ app.get('/api', (req, res) => {
     description: 'Multi-cloud cost monitoring API for AWS, Azure, and GCP',
     endpoints: {
       health: '/health',
+      auth: '/api/auth',
+      accounts: '/api/accounts',
       aws: '/api/aws',
       azure: '/api/azure',
       gcp: '/api/gcp',
@@ -158,12 +207,27 @@ process.on('SIGINT', () => {
   process.exit(0);
 });
 
-// Start server
-app.listen(PORT, () => {
-  logger.info(`CloudCost Buddy API server running on port ${PORT}`);
-  logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
-  logger.info(`API Documentation: http://localhost:${PORT}/api`);
-  logger.info(`Health Check: http://localhost:${PORT}/health`);
-});
+// Initialize database and start server
+const startServer = async () => {
+  try {
+    // Initialize database
+    await initializeDatabase();
+    logger.info('Database initialized successfully');
+
+    // Start server
+    app.listen(PORT, () => {
+      logger.info(`CloudCost Buddy API server running on port ${PORT}`);
+      logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
+      logger.info(`API Documentation: http://localhost:${PORT}/api`);
+      logger.info(`Health Check: http://localhost:${PORT}/health`);
+      logger.info('Multi-tenant CloudCost Buddy is ready');
+    });
+  } catch (error) {
+    logger.error('Failed to start server:', error);
+    process.exit(1);
+  }
+};
+
+startServer();
 
 module.exports = app;

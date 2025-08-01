@@ -2,28 +2,31 @@ import axios from 'axios';
 import Constants from 'expo-constants';
 
 /**
- * API Service for CloudCost Buddy
- * Handles all communication with the backend API
+ * API service for backend communication
  */
 class ApiService {
   constructor() {
-    // Get API URL from app config or default to localhost
     this.baseURL = Constants.expoConfig?.extra?.apiUrl || 'http://localhost:3000/api';
     
-    // Create axios instance with default config
     this.client = axios.create({
       baseURL: this.baseURL,
-      timeout: 30000, // 30 second timeout
+      timeout: 30000,
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json'
       }
     });
 
+    // Store for authentication token
+    this.authToken = null;
+
     // Request interceptor
     this.client.interceptors.request.use(
       (config) => {
-        console.log(`API Request: ${config.method?.toUpperCase()} ${config.url}`);
+        // Add auth token to requests if available
+        if (this.authToken) {
+          config.headers.Authorization = `Bearer ${this.authToken}`;
+        }
         return config;
       },
       (error) => {
@@ -35,11 +38,9 @@ class ApiService {
     // Response interceptor
     this.client.interceptors.response.use(
       (response) => {
-        console.log(`API Response: ${response.status} ${response.config.url}`);
         return response;
       },
       (error) => {
-        console.error('API Response Error:', error.response?.status, error.response?.data || error.message);
         return Promise.reject(this.handleError(error));
       }
     );
@@ -169,6 +170,48 @@ class ApiService {
   };
 
   /**
+   * Authentication API endpoints
+   */
+  auth = {
+    // User registration
+    register: (userData) => this.client.post('/auth/register', userData),
+    
+    // User login
+    login: (credentials) => this.client.post('/auth/login', credentials),
+    
+    // Get current user
+    getMe: () => this.client.get('/auth/me'),
+    
+    // Update user profile
+    updateProfile: (userData) => this.client.put('/auth/me', userData),
+    
+    // Logout
+    logout: () => this.client.post('/auth/logout'),
+    
+    // Connect cloud accounts using OAuth tokens from mobile
+    connectAWS: (tokenData) => this.client.post('/auth/connect/aws', tokenData),
+    connectAzure: (tokenData) => this.client.post('/auth/connect/azure', tokenData),
+    connectGCP: (tokenData) => this.client.post('/auth/connect/gcp', tokenData),
+    
+    // Refresh OAuth tokens
+    refreshToken: (accountId, refreshToken) => this.client.post('/auth/refresh-token', { accountId, refreshToken })
+  };
+
+  /**
+   * Cloud Accounts API endpoints
+   */
+  accounts = {
+    // Get all connected accounts
+    getAll: () => this.client.get('/accounts'),
+    
+    // Test account connection
+    testConnection: (accountId) => this.client.put(`/accounts/${accountId}/test`),
+    
+    // Remove account connection
+    disconnect: (accountId) => this.client.delete(`/accounts/${accountId}`)
+  };
+
+  /**
    * Alert API endpoints (Coming in Week 5)
    */
   alerts = {
@@ -205,6 +248,27 @@ class ApiService {
    */
   delete(endpoint) {
     return this.client.delete(endpoint);
+  }
+
+  /**
+   * Set authentication token
+   */
+  setAuthToken(token) {
+    this.authToken = token;
+  }
+
+  /**
+   * Clear authentication token
+   */
+  clearAuthToken() {
+    this.authToken = null;
+  }
+
+  /**
+   * Get current auth token
+   */
+  getAuthToken() {
+    return this.authToken;
   }
 }
 

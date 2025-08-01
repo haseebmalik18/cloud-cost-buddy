@@ -1,9 +1,8 @@
 const express = require('express');
-const AWSService = require('../services/awsService');
-const AzureService = require('../services/azureService');
-const GCPService = require('../services/gcpService');
+const CloudServiceFactory = require('../services/CloudServiceFactory');
 const CostNormalizer = require('../utils/costNormalizer');
 const logger = require('../utils/logger');
+const { authenticateToken } = require('../middleware/auth');
 const { 
   validateTrendsQuery, 
   validateComparisonQuery, 
@@ -13,16 +12,11 @@ const {
 
 const router = express.Router();
 
-// Initialize cloud services
-const awsService = new AWSService();
-const azureService = new AzureService();
-const gcpService = new GCPService();
-
 /**
  * GET /api/dashboard/summary
  * Get multi-cloud dashboard summary with data from all providers
  */
-router.get('/summary', sanitizeInput, validateCostQuery, async (req, res, next) => {
+router.get('/summary', authenticateToken, sanitizeInput, validateCostQuery, async (req, res, next) => {
   try {
     const summary = {
       totalCost: 0,
@@ -36,50 +30,144 @@ router.get('/summary', sanitizeInput, validateCostQuery, async (req, res, next) 
       lastUpdated: new Date().toISOString()
     };
 
-    // Fetch data from all providers in parallel
-    const cloudResults = await Promise.allSettled([
-      // AWS
-      awsService.getCurrentMonthCosts().then(data => ({ provider: 'aws', data })),
-      // Azure
-      azureService.getCurrentMonthCosts().then(data => ({ provider: 'azure', data })),
-      // GCP
-      gcpService.getCurrentMonthCosts().then(data => ({ provider: 'gcp', data }))
-    ]);
+    // Get user's cloud services
+    const userServices = await CloudServiceFactory.getAllUserServices(req.userId);
+    
+    // Fetch data from all user's cloud accounts in parallel
+    const cloudResults = [];
+    
+    // Process AWS accounts
+    if (userServices.aws) {
+      for (const awsInstance of userServices.aws) {
+        cloudResults.push(
+          awsInstance.service.getCurrentMonthCosts()
+            .then(data => ({ 
+              provider: 'aws', 
+              accountId: awsInstance.account.account_id,
+              accountName: awsInstance.account.account_name,
+              data 
+            }))
+            .catch(error => ({ 
+              provider: 'aws', 
+              accountId: awsInstance.account.account_id,
+              error: error.message 
+            }))
+        );
+      }
+    }
+    
+    // Process Azure accounts  
+    if (userServices.azure) {
+      for (const azureInstance of userServices.azure) {
+        cloudResults.push(
+          azureInstance.service.getCurrentMonthCosts()
+            .then(data => ({ 
+              provider: 'azure', 
+              accountId: azureInstance.account.account_id,
+              accountName: azureInstance.account.account_name,
+              data 
+            }))
+            .catch(error => ({ 
+              provider: 'azure', 
+              accountId: azureInstance.account.account_id,
+              error: error.message 
+            }))
+        );
+      }
+    }
+    
+    // Process GCP accounts
+    if (userServices.gcp) {
+      for (const gcpInstance of userServices.gcp) {
+        cloudResults.push(
+          gcpInstance.service.getCurrentMonthCosts()
+            .then(data => ({ 
+              provider: 'gcp', 
+              accountId: gcpInstance.account.account_id,
+              accountName: gcpInstance.account.account_name,
+              data 
+            }))
+            .catch(error => ({ 
+              provider: 'gcp', 
+              accountId: gcpInstance.account.account_id,
+              error: error.message 
+            }))
+        );
+      }
+    }
+    
+    const results = await Promise.allSettled(cloudResults);
 
     const normalizedData = [];
+    const providerSummary = { aws: [], azure: [], gcp: [] };
 
     // Process results and update summary
-    cloudResults.forEach((result, index) => {
-      const providers = ['aws', 'azure', 'gcp'];
-      const provider = providers[index];
-
-      if (result.status === 'fulfilled') {
-        const { data } = result.value;
+    results.forEach((result) => {
+      if (result.status === 'fulfilled' && result.value.data) {
+        const { provider, accountId, accountName, data } = result.value;
         
         // Normalize the data
         const normalized = CostNormalizer.normalizeCostData(data, provider);
+        normalized.accountId = accountId;
+        normalized.accountName = accountName;
         normalizedData.push(normalized);
 
-        // Update cloud status
-        summary.clouds[provider] = {
-          available: true,
-          status: 'active',
+        // Group by provider
+        if (!providerSummary[provider]) {
+          providerSummary[provider] = [];
+        }
+        providerSummary[provider].push({
+          accountId,
+          accountName,
           totalCost: normalized.totalCost,
           currency: normalized.currency,
           topServices: normalized.services.slice(0, 3),
           lastUpdated: new Date().toISOString()
-        };
+        });
 
         // Add to total cost
         summary.totalCost += normalized.totalCost;
 
-      } else {
-        // Handle errors gracefully
-        logger.warn(`Failed to fetch ${provider} data:`, result.reason);
+      } else if (result.status === 'fulfilled' && result.value.error) {
+        const { provider, accountId, error } = result.value;
+        logger.warn(`Failed to fetch ${provider} data for account ${accountId}:`, error);
+        
+        if (!providerSummary[provider]) {
+          providerSummary[provider] = [];
+        }
+        providerSummary[provider].push({
+          accountId,
+          status: 'error',
+          error,
+          lastUpdated: new Date().toISOString()
+        });
+      }
+    });
+
+    // Create provider summaries
+    Object.keys(providerSummary).forEach(provider => {
+      const accounts = providerSummary[provider];
+      if (accounts.length > 0) {
+        const successfulAccounts = accounts.filter(acc => !acc.error);
+        const totalProviderCost = successfulAccounts.reduce((sum, acc) => sum + (acc.totalCost || 0), 0);
+        
         summary.clouds[provider] = {
           available: true,
-          status: 'error',
-          error: result.reason?.message || 'Connection failed',
+          status: successfulAccounts.length > 0 ? 'active' : 'error',
+          accountCount: accounts.length,
+          totalCost: totalProviderCost,
+          currency: 'USD',
+          accounts: accounts,
+          topServices: successfulAccounts.length > 0 
+            ? successfulAccounts[0].topServices || []
+            : [],
+          lastUpdated: new Date().toISOString()
+        };
+      } else {
+        summary.clouds[provider] = {
+          available: false,
+          status: 'no_accounts',
+          message: 'No accounts connected',
           lastUpdated: new Date().toISOString()
         };
       }
@@ -91,7 +179,7 @@ router.get('/summary', sanitizeInput, validateCostQuery, async (req, res, next) 
       summary.combinedServices = combined.combinedServices.slice(0, 10); // Top 10 services across all clouds
     }
 
-    logger.info(`Multi-cloud dashboard summary retrieved: $${summary.totalCost} USD`);
+    logger.info(`Multi-cloud dashboard summary retrieved for user ${req.userId}: $${summary.totalCost} USD`);
 
     res.status(200).json({
       success: true,
@@ -108,7 +196,7 @@ router.get('/summary', sanitizeInput, validateCostQuery, async (req, res, next) 
  * GET /api/dashboard/compare
  * Compare costs across cloud providers
  */
-router.get('/compare', sanitizeInput, validateComparisonQuery, async (req, res, next) => {
+router.get('/compare', authenticateToken, sanitizeInput, validateComparisonQuery, async (req, res, next) => {
   try {
     const { metric = 'cost', period = 'current' } = req.query;
 
@@ -190,7 +278,7 @@ router.get('/compare', sanitizeInput, validateComparisonQuery, async (req, res, 
  * GET /api/dashboard/health
  * Get health status for all cloud provider connections
  */
-router.get('/health', async (req, res, next) => {
+router.get('/health', authenticateToken, async (req, res, next) => {
   try {
     // Test all provider connections in parallel
     const healthChecks = await Promise.allSettled([
@@ -238,7 +326,7 @@ router.get('/alerts', (req, res) => {
   res.status(501).json({
     success: false,
     error: 'Not Implemented',
-    message: 'Alert system will be implemented in Week 5',
+    message: 'Alert system not yet implemented',
     timestamp: new Date().toISOString()
   });
 });
@@ -247,7 +335,7 @@ router.get('/alerts', (req, res) => {
  * GET /api/dashboard/trends
  * Get cost trends across all cloud providers
  */
-router.get('/trends', sanitizeInput, validateTrendsQuery, async (req, res, next) => {
+router.get('/trends', authenticateToken, sanitizeInput, validateTrendsQuery, async (req, res, next) => {
   try {
     const { 
       startDate, 

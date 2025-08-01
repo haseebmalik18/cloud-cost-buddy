@@ -1,21 +1,26 @@
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { createStackNavigator } from '@react-navigation/stack';
 import { useTheme } from 'react-native-paper';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import { useAuth } from '../contexts/AuthContext';
 
 // Import screens
 import DashboardScreen from '../screens/DashboardScreen';
 import CloudsScreen from '../screens/CloudsScreen';
 import TrendsScreen from '../screens/TrendsScreen';
 import AlertsScreen from '../screens/AlertsScreen';
+import LoginScreen from '../screens/LoginScreen';
+import ConnectCloudScreen from '../screens/ConnectCloudScreen';
 
 const Tab = createBottomTabNavigator();
+const Stack = createStackNavigator();
 
 /**
- * Main App Navigator
- * Bottom tab navigation for the main app sections
+ * Main Tab Navigator
+ * Bottom tab navigation for authenticated users
  */
-export default function AppNavigator() {
+function MainTabNavigator() {
   const theme = useTheme();
 
   return (
@@ -82,7 +87,16 @@ export default function AppNavigator() {
         component={CloudsScreen}
         options={{
           title: 'Clouds',
-          headerTitle: 'Cloud Providers'
+          headerTitle: 'Cloud Providers',
+          headerRight: ({ navigation }) => (
+            <Icon 
+              name="plus" 
+              size={24} 
+              color={theme.colors.primary}
+              style={{ marginRight: 16 }}
+              onPress={() => navigation.navigate('ConnectCloud')}
+            />
+          )
         }}
       />
       <Tab.Screen 
@@ -102,5 +116,65 @@ export default function AppNavigator() {
         }}
       />
     </Tab.Navigator>
+  );
+}
+
+/**
+ * Main App Navigator
+ * Handles authentication flow and main app navigation
+ */
+export default function AppNavigator() {
+  const { isAuthenticated, isLoading } = useAuth();
+  const theme = useTheme();
+
+  if (isLoading) {
+    // Show loading screen while checking auth state
+    return null; // Or a loading component
+  }
+
+  return (
+    <Stack.Navigator
+      screenOptions={{
+        headerStyle: {
+          backgroundColor: theme.colors.surface,
+          elevation: 0,
+          shadowOpacity: 0,
+          borderBottomWidth: 1,
+          borderBottomColor: theme.colors.outline
+        },
+        headerTitleStyle: {
+          color: theme.colors.onSurface,
+          fontSize: 20,
+          fontWeight: 'bold'
+        },
+        headerTintColor: theme.colors.onSurface
+      }}
+    >
+      {isAuthenticated ? (
+        // Authenticated stack
+        <>
+          <Stack.Screen
+            name="MainTabs"
+            component={MainTabNavigator}
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen
+            name="ConnectCloud"
+            component={ConnectCloudScreen}
+            options={{
+              title: 'Connect Cloud Provider',
+              presentation: 'modal'
+            }}
+          />
+        </>
+      ) : (
+        // Authentication stack
+        <Stack.Screen
+          name="Login"
+          component={LoginScreen}
+          options={{ headerShown: false }}
+        />
+      )}
+    </Stack.Navigator>
   );
 }

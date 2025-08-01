@@ -8,12 +8,22 @@ const logger = require('../utils/logger');
  * Handles Google Cloud Platform billing API integration with Service Account authentication
  */
 class GCPService {
-  constructor() {
-    this.projectId = process.env.GCP_PROJECT_ID;
-    this.billingAccountId = process.env.GCP_BILLING_ACCOUNT_ID;
-    this.credentialsPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
-    this.billingDatasetId = process.env.GCP_BILLING_DATASET_ID || 'billing_export';
-    this.billingTablePrefix = process.env.GCP_BILLING_TABLE_PREFIX || 'gcp_billing_export_v1';
+  constructor(userCredentials = null) {
+    // Use user credentials if provided, otherwise fall back to environment
+    if (userCredentials) {
+      this.projectId = userCredentials.projectId;
+      this.billingAccountId = userCredentials.billingAccountId;
+      this.serviceAccountKey = userCredentials.serviceAccountKey;
+      this.billingDatasetId = userCredentials.billingDatasetId || 'billing_export';
+      this.billingTablePrefix = userCredentials.billingTablePrefix || 'gcp_billing_export_v1';
+    } else {
+      // Legacy: use environment variables for single-tenant mode
+      this.projectId = process.env.GCP_PROJECT_ID;
+      this.billingAccountId = process.env.GCP_BILLING_ACCOUNT_ID;
+      this.credentialsPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+      this.billingDatasetId = process.env.GCP_BILLING_DATASET_ID || 'billing_export';
+      this.billingTablePrefix = process.env.GCP_BILLING_TABLE_PREFIX || 'gcp_billing_export_v1';
+    }
     
     // Initialize client with appropriate credentials
     this.initializeClient();
@@ -26,10 +36,18 @@ class GCPService {
     try {
       const authOptions = {};
 
-      // Use service account key file if specified
-      if (this.credentialsPath) {
+      // Use service account key if provided directly (for user credentials)
+      if (this.serviceAccountKey) {
+        // Parse the service account key if it's a string
+        const keyData = typeof this.serviceAccountKey === 'string' 
+          ? JSON.parse(this.serviceAccountKey) 
+          : this.serviceAccountKey;
+        authOptions.credentials = keyData;
+        logger.info('GCP client initialized with user service account key');
+      } else if (this.credentialsPath) {
+        // Use service account key file path (for environment credentials)
         authOptions.keyFilename = this.credentialsPath;
-        logger.info(`GCP client initialized with service account key: ${this.credentialsPath}`);
+        logger.info(`GCP client initialized with service account key file: ${this.credentialsPath}`);
       } else {
         // Use default credential chain (environment variables, metadata server, etc.)
         logger.info('GCP client initialized with default credential chain');

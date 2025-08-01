@@ -40,7 +40,6 @@ const CloudsScreen = ({ navigation }) => {
       }
 
     } catch (err) {
-      console.error('Clouds fetch error:', err);
       setError(err.message || 'Failed to fetch cloud data');
       setSnackbarVisible(true);
     } finally {
@@ -65,20 +64,13 @@ const CloudsScreen = ({ navigation }) => {
     const providerData = cloudsData[provider];
     
     if (!providerData || providerData.status !== 'active') {
-      console.log(`${provider} is not available or has errors`);
       return;
     }
 
     // In a full implementation, this would navigate to a detailed screen
-    // For now, we'll show provider-specific information
-    console.log(`${provider.toUpperCase()} Details:`, {
-      totalCost: providerData.totalCost,
-      currency: providerData.currency,
-      serviceCount: providerData.topServices?.length || 0,
-      lastUpdated: providerData.lastUpdated
-    });
+    // For now, we'll show an alert with provider information
+    alert(`${provider.toUpperCase()} Details\n\nTotal Cost: ${formatCurrency(providerData.totalCost, providerData.currency)}\nServices: ${providerData.topServices?.length || 0}\nLast Updated: ${new Date(providerData.lastUpdated).toLocaleDateString()}`);
     
-    // Future: navigation.navigate('ProviderDetail', { provider, data: providerData });
   };
 
   // Format currency

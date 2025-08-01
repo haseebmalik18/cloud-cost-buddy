@@ -6,8 +6,7 @@ import CloudCard from '../components/CloudCard';
 import apiService from '../services/apiService';
 
 /**
- * Dashboard Screen
- * Main screen showing multi-cloud cost summary and overview
+ * Main dashboard showing multi-cloud cost summary
  */
 const DashboardScreen = ({ navigation }) => {
   const theme = useTheme();
@@ -17,7 +16,6 @@ const DashboardScreen = ({ navigation }) => {
   const [error, setError] = useState(null);
   const [snackbarVisible, setSnackbarVisible] = useState(false);
 
-  // Fetch dashboard data
   const fetchDashboardData = async (isRefresh = false) => {
     try {
       if (isRefresh) {
@@ -40,17 +38,14 @@ const DashboardScreen = ({ navigation }) => {
     }
   };
 
-  // Initial data fetch
   useEffect(() => {
     fetchDashboardData();
   }, []);
 
-  // Handle refresh
   const onRefresh = () => {
     fetchDashboardData(true);
   };
 
-  // Handle cloud card press
   const handleCloudCardPress = (provider) => {
     navigation.navigate('Clouds', { 
       screen: 'CloudDetail', 
@@ -58,7 +53,6 @@ const DashboardScreen = ({ navigation }) => {
     });
   };
 
-  // Format currency
   const formatCurrency = (amount, currency = 'USD') => {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
@@ -68,7 +62,6 @@ const DashboardScreen = ({ navigation }) => {
     }).format(amount || 0);
   };
 
-  // Loading state
   if (loading && !dashboardData) {
     return (
       <View style={[styles.container, styles.centered]}>

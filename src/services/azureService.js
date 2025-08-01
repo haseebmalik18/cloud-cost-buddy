@@ -7,11 +7,20 @@ const logger = require('../utils/logger');
  * Handles Azure Cost Management + Billing API integration with Service Principal authentication
  */
 class AzureService {
-  constructor() {
-    this.subscriptionId = process.env.AZURE_SUBSCRIPTION_ID;
-    this.clientId = process.env.AZURE_CLIENT_ID;
-    this.clientSecret = process.env.AZURE_CLIENT_SECRET;
-    this.tenantId = process.env.AZURE_TENANT_ID;
+  constructor(userCredentials = null) {
+    // Use user credentials if provided, otherwise fall back to environment
+    if (userCredentials) {
+      this.subscriptionId = userCredentials.subscriptionId;
+      this.clientId = userCredentials.clientId;
+      this.clientSecret = userCredentials.clientSecret;
+      this.tenantId = userCredentials.tenantId;
+    } else {
+      // Legacy: use environment variables for single-tenant mode
+      this.subscriptionId = process.env.AZURE_SUBSCRIPTION_ID;
+      this.clientId = process.env.AZURE_CLIENT_ID;
+      this.clientSecret = process.env.AZURE_CLIENT_SECRET;
+      this.tenantId = process.env.AZURE_TENANT_ID;
+    }
     
     // Initialize client with appropriate credentials
     this.initializeClient();

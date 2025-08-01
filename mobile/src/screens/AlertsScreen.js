@@ -4,8 +4,7 @@ import { Card, Text, Button, useTheme } from 'react-native-paper';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
 /**
- * Alerts Screen
- * Alert management and configuration (Coming in Week 5)
+ * Alert management screen (placeholder - not yet implemented)
  */
 const AlertsScreen = ({ navigation }) => {
   const theme = useTheme();
@@ -28,7 +27,7 @@ const AlertsScreen = ({ navigation }) => {
             </Text>
             
             <Text variant="bodyLarge" style={styles.comingSoonSubtitle}>
-              Coming in Week 5
+              Not Yet Implemented
             </Text>
             
             <Text variant="bodyMedium" style={styles.comingSoonDescription}>
@@ -41,7 +40,7 @@ const AlertsScreen = ({ navigation }) => {
         <Card style={styles.featuresCard}>
           <Card.Content>
             <Text variant="titleMedium" style={styles.featuresTitle}>
-              Upcoming Features
+              Planned Features
             </Text>
             
             <View style={styles.featuresList}>
@@ -128,77 +127,19 @@ const AlertsScreen = ({ navigation }) => {
           </Card.Content>
         </Card>
 
-        {/* Implementation Timeline */}
-        <Card style={styles.timelineCard}>
-          <Card.Content>
-            <Text variant="titleMedium" style={styles.timelineTitle}>
-              Implementation Timeline
-            </Text>
-            
-            <View style={styles.timelineList}>
-              <View style={styles.timelineItem}>
-                <View style={[styles.timelineDot, { backgroundColor: theme.colors.success }]} />
-                <View style={styles.timelineContent}>
-                  <Text variant="bodyMedium" style={styles.timelineWeek}>
-                    Week 1-3: Backend & API
-                  </Text>
-                  <Text variant="bodySmall" style={styles.timelineDescription}>
-                    Multi-cloud cost data collection completed ✓
-                  </Text>
-                </View>
-              </View>
-
-              <View style={styles.timelineItem}>
-                <View style={[styles.timelineDot, { backgroundColor: theme.colors.success }]} />
-                <View style={styles.timelineContent}>
-                  <Text variant="bodyMedium" style={styles.timelineWeek}>
-                    Week 4: Mobile Dashboard
-                  </Text>
-                  <Text variant="bodySmall" style={styles.timelineDescription}>
-                    React Native app with cost visualization ✓
-                  </Text>
-                </View>
-              </View>
-
-              <View style={styles.timelineItem}>
-                <View style={[styles.timelineDot, { backgroundColor: theme.colors.warning }]} />
-                <View style={styles.timelineContent}>
-                  <Text variant="bodyMedium" style={styles.timelineWeek}>
-                    Week 5: Alert System
-                  </Text>
-                  <Text variant="bodySmall" style={styles.timelineDescription}>
-                    Budget alerts, spike detection & Firebase notifications
-                  </Text>
-                </View>
-              </View>
-
-              <View style={styles.timelineItem}>
-                <View style={[styles.timelineDot, { backgroundColor: theme.colors.outline }]} />
-                <View style={styles.timelineContent}>
-                  <Text variant="bodyMedium" style={styles.timelineWeek}>
-                    Week 6: Final Polish
-                  </Text>
-                  <Text variant="bodySmall" style={styles.timelineDescription}>
-                    Multi-account support, UI polish & security review
-                  </Text>
-                </View>
-              </View>
-            </View>
-          </Card.Content>
-        </Card>
 
         {/* CTA Button */}
         <Card style={styles.ctaCard}>
           <Card.Content style={styles.ctaContent}>
             <Text variant="bodyMedium" style={styles.ctaText}>
-              Want to be notified when alerts are ready?
+              Alert system is not yet implemented
             </Text>
             <Button 
               mode="contained" 
-              onPress={() => console.log('Notification signup')}
+              onPress={() => alert('Alert system is not yet implemented')}
               style={styles.ctaButton}
             >
-              Get Notified
+              Back to Dashboard
             </Button>
           </Card.Content>
         </Card>
@@ -266,39 +207,6 @@ const styles = StyleSheet.create({
     marginBottom: 4
   },
   featureDescription: {
-    opacity: 0.7,
-    lineHeight: 18
-  },
-  timelineCard: {
-    elevation: 2,
-    marginBottom: 16
-  },
-  timelineTitle: {
-    fontWeight: 'bold',
-    marginBottom: 16
-  },
-  timelineList: {
-    gap: 16
-  },
-  timelineItem: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 16
-  },
-  timelineDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    marginTop: 6
-  },
-  timelineContent: {
-    flex: 1
-  },
-  timelineWeek: {
-    fontWeight: '500',
-    marginBottom: 4
-  },
-  timelineDescription: {
     opacity: 0.7,
     lineHeight: 18
   },
