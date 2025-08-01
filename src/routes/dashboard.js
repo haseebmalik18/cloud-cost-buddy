@@ -4,6 +4,12 @@ const AzureService = require('../services/azureService');
 const GCPService = require('../services/gcpService');
 const CostNormalizer = require('../utils/costNormalizer');
 const logger = require('../utils/logger');
+const { 
+  validateTrendsQuery, 
+  validateComparisonQuery, 
+  validateCostQuery,
+  sanitizeInput 
+} = require('../middleware/validators');
 
 const router = express.Router();
 
@@ -16,7 +22,7 @@ const gcpService = new GCPService();
  * GET /api/dashboard/summary
  * Get multi-cloud dashboard summary with data from all providers
  */
-router.get('/summary', async (req, res, next) => {
+router.get('/summary', sanitizeInput, validateCostQuery, async (req, res, next) => {
   try {
     const summary = {
       totalCost: 0,
@@ -102,7 +108,7 @@ router.get('/summary', async (req, res, next) => {
  * GET /api/dashboard/compare
  * Compare costs across cloud providers
  */
-router.get('/compare', async (req, res, next) => {
+router.get('/compare', sanitizeInput, validateComparisonQuery, async (req, res, next) => {
   try {
     const { metric = 'cost', period = 'current' } = req.query;
 
@@ -241,13 +247,117 @@ router.get('/alerts', (req, res) => {
  * GET /api/dashboard/trends
  * Get cost trends across all cloud providers
  */
-router.get('/trends', (req, res) => {
-  res.status(501).json({
-    success: false,
-    error: 'Not Implemented',
-    message: 'Trend analysis will be implemented in Week 5',
-    timestamp: new Date().toISOString()
-  });
+router.get('/trends', sanitizeInput, validateTrendsQuery, async (req, res, next) => {
+  try {
+    const { 
+      startDate, 
+      endDate, 
+      granularity = 'Daily',
+      provider = 'all'
+    } = req.query;
+
+    // Validation is now handled by middleware
+
+    const trends = {
+      period: { startDate, endDate },
+      granularity,
+      providers: {},
+      combined: {
+        trends: [],
+        totalCost: 0,
+        currency: 'USD'
+      }
+    };
+
+    const providers = provider === 'all' ? ['aws', 'azure', 'gcp'] : [provider];
+    const trendParams = { startDate, endDate, granularity };
+
+    // Fetch trends from requested providers
+    const trendResults = await Promise.allSettled([
+      providers.includes('aws') ? awsService.getCostTrends(startDate, endDate, granularity) : null,
+      providers.includes('azure') ? azureService.getCostTrends(startDate, endDate, granularity) : null,
+      providers.includes('gcp') ? gcpService.getCostTrends(startDate, endDate, granularity) : null
+    ]);
+
+    // Process AWS trends
+    if (trendResults[0] && trendResults[0].status === 'fulfilled' && trendResults[0].value) {
+      const awsTrends = trendResults[0].value;
+      trends.providers.aws = {
+        available: true,
+        trends: awsTrends.trends || [],
+        totalCost: awsTrends.totalCost || 0,
+        currency: awsTrends.currency || 'USD'
+      };
+    } else {
+      trends.providers.aws = { available: false, error: 'Failed to fetch AWS trends' };
+    }
+
+    // Process Azure trends
+    if (trendResults[1] && trendResults[1].status === 'fulfilled' && trendResults[1].value) {
+      const azureTrends = trendResults[1].value;
+      trends.providers.azure = {
+        available: true,
+        trends: azureTrends.trends || [],
+        totalCost: azureTrends.totalCost || 0,
+        currency: azureTrends.currency || 'USD'
+      };
+    } else {
+      trends.providers.azure = { available: false, error: 'Failed to fetch Azure trends' };
+    }
+
+    // Process GCP trends
+    if (trendResults[2] && trendResults[2].status === 'fulfilled' && trendResults[2].value) {
+      const gcpTrends = trendResults[2].value;
+      trends.providers.gcp = {
+        available: true,
+        trends: gcpTrends.trends || [],
+        totalCost: gcpTrends.totalCost || 0,
+        currency: gcpTrends.currency || 'USD'
+      };
+    } else {
+      trends.providers.gcp = { available: false, error: 'Failed to fetch GCP trends' };
+    }
+
+    // Combine trends from all providers
+    const combinedTrendsMap = new Map();
+    let totalCost = 0;
+
+    Object.values(trends.providers).forEach(providerTrends => {
+      if (providerTrends.available && providerTrends.trends) {
+        totalCost += providerTrends.totalCost;
+        
+        providerTrends.trends.forEach(trend => {
+          const dateKey = trend.date;
+          if (combinedTrendsMap.has(dateKey)) {
+            combinedTrendsMap.get(dateKey).cost += trend.cost;
+          } else {
+            combinedTrendsMap.set(dateKey, {
+              date: dateKey,
+              cost: trend.cost,
+              currency: 'USD'
+            });
+          }
+        });
+      }
+    });
+
+    trends.combined = {
+      trends: Array.from(combinedTrendsMap.values()).sort((a, b) => new Date(a.date) - new Date(b.date)),
+      totalCost,
+      currency: 'USD'
+    };
+
+    logger.info(`Multi-cloud trends retrieved for ${startDate} to ${endDate}: $${totalCost} USD`);
+
+    res.status(200).json({
+      success: true,
+      data: trends,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    next(error);
+  }
 });
 
 module.exports = router;

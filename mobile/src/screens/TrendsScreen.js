@@ -21,47 +21,33 @@ const TrendsScreen = ({ navigation }) => {
   const [error, setError] = useState(null);
   const [snackbarVisible, setSnackbarVisible] = useState(false);
 
-  // Mock trends data for demonstration
-  const mockTrendsData = {
-    aws: {
-      trends: [
-        { date: '2025-01-01', cost: 120 },
-        { date: '2025-01-02', cost: 135 },
-        { date: '2025-01-03', cost: 110 },
-        { date: '2025-01-04', cost: 145 },
-        { date: '2025-01-05', cost: 160 },
-        { date: '2025-01-06', cost: 140 },
-        { date: '2025-01-07', cost: 155 }
-      ],
-      totalCost: 965,
-      currency: 'USD'
-    },
-    azure: {
-      trends: [
-        { date: '2025-01-01', cost: 85 },
-        { date: '2025-01-02', cost: 92 },
-        { date: '2025-01-03', cost: 78 },
-        { date: '2025-01-04', cost: 105 },
-        { date: '2025-01-05', cost: 118 },
-        { date: '2025-01-06', cost: 95 },
-        { date: '2025-01-07', cost: 102 }
-      ],
-      totalCost: 675,
-      currency: 'USD'
-    },
-    gcp: {
-      trends: [
-        { date: '2025-01-01', cost: 65 },
-        { date: '2025-01-02', cost: 72 },
-        { date: '2025-01-03', cost: 58 },
-        { date: '2025-01-04', cost: 80 },
-        { date: '2025-01-05', cost: 88 },
-        { date: '2025-01-06', cost: 75 },
-        { date: '2025-01-07', cost: 82 }
-      ],
-      totalCost: 520,
-      currency: 'USD'
+  // Generate date range for trends based on selected period
+  const getDateRange = (period) => {
+    const now = new Date();
+    let startDate, endDate;
+    
+    switch (period) {
+      case '7d':
+        startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        endDate = now;
+        break;
+      case '30d':
+        startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        endDate = now;
+        break;
+      case '90d':
+        startDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+        endDate = now;
+        break;
+      default:
+        startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        endDate = now;
     }
+    
+    return {
+      startDate: startDate.toISOString().split('T')[0],
+      endDate: endDate.toISOString().split('T')[0]
+    };
   };
 
   // Fetch trends data
@@ -74,9 +60,40 @@ const TrendsScreen = ({ navigation }) => {
       }
       setError(null);
 
-      // For demo purposes, use mock data
-      // In production, you would fetch from the API based on selectedPeriod
-      setTrendsData(mockTrendsData);
+      const { startDate, endDate } = getDateRange(selectedPeriod);
+      const granularity = selectedPeriod === '7d' ? 'Daily' : 'Daily';
+
+      // Fetch trends from all providers in parallel
+      const [awsResult, azureResult, gcpResult] = await Promise.allSettled([
+        apiService.aws.getTrends({ startDate, endDate, granularity }),
+        apiService.azure.getTrends({ startDate, endDate, granularity }),
+        apiService.gcp.getTrends({ startDate, endDate, granularity })
+      ]);
+
+      const trendsData = {};
+
+      // Process AWS results
+      if (awsResult.status === 'fulfilled') {
+        trendsData.aws = awsResult.value.data;
+      } else {
+        console.warn('AWS trends fetch failed:', awsResult.reason);
+      }
+
+      // Process Azure results
+      if (azureResult.status === 'fulfilled') {
+        trendsData.azure = azureResult.value.data;
+      } else {
+        console.warn('Azure trends fetch failed:', azureResult.reason);
+      }
+
+      // Process GCP results
+      if (gcpResult.status === 'fulfilled') {
+        trendsData.gcp = gcpResult.value.data;
+      } else {
+        console.warn('GCP trends fetch failed:', gcpResult.reason);
+      }
+
+      setTrendsData(trendsData);
 
     } catch (err) {
       console.error('Trends fetch error:', err);

@@ -13,7 +13,7 @@ const AlertsScreen = ({ navigation }) => {
   return (
     <View style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        {/* Coming Soon Card */}
+        {/* Alert System Preview Card */}
         <Card style={styles.comingSoonCard}>
           <Card.Content style={styles.comingSoonContent}>
             <Icon 

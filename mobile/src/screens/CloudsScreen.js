@@ -59,10 +59,26 @@ const CloudsScreen = ({ navigation }) => {
     fetchCloudsData(true);
   };
 
-  // Handle cloud card press - navigate to detailed view
+  // Handle cloud card press - show provider details
   const handleCloudCardPress = (provider) => {
-    // For now, just show an alert since detail screens are not implemented
-    console.log(`Navigate to ${provider} details`);
+    // Navigate to provider-specific details view
+    const providerData = cloudsData[provider];
+    
+    if (!providerData || providerData.status !== 'active') {
+      console.log(`${provider} is not available or has errors`);
+      return;
+    }
+
+    // In a full implementation, this would navigate to a detailed screen
+    // For now, we'll show provider-specific information
+    console.log(`${provider.toUpperCase()} Details:`, {
+      totalCost: providerData.totalCost,
+      currency: providerData.currency,
+      serviceCount: providerData.topServices?.length || 0,
+      lastUpdated: providerData.lastUpdated
+    });
+    
+    // Future: navigation.navigate('ProviderDetail', { provider, data: providerData });
   };
 
   // Format currency

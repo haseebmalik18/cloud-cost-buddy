@@ -7,6 +7,9 @@ require('dotenv').config();
 
 const logger = require('./utils/logger');
 const errorHandler = require('./middleware/errorHandler');
+const requestId = require('./middleware/requestId');
+const { sanitizeInput } = require('./middleware/validators');
+const { recordMetrics, monitoringService } = require('./utils/monitoring');
 const awsRoutes = require('./routes/aws');
 const azureRoutes = require('./routes/azure');
 const gcpRoutes = require('./routes/gcp');
@@ -52,7 +55,13 @@ const limiter = rateLimit({
 
 app.use(limiter);
 
-// Request logging
+// Request ID middleware for tracing
+app.use(requestId);
+
+// Metrics recording middleware
+app.use(recordMetrics);
+
+// Request logging with request ID
 app.use(morgan('combined', {
   stream: {
     write: (message) => logger.info(message.trim())
@@ -63,14 +72,42 @@ app.use(morgan('combined', {
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
+// Global input sanitization
+app.use(sanitizeInput);
+
 // Health check endpoint
 app.get('/health', (req, res) => {
-  res.status(200).json({
-    status: 'healthy',
+  const health = monitoringService.getHealthStatus();
+  const statusCode = health.status === 'healthy' ? 200 : 
+                    health.status === 'degraded' ? 207 : 503;
+  
+  res.status(statusCode).json({
+    status: health.status,
     timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
-    environment: process.env.NODE_ENV || 'development'
+    uptime: Math.round(process.uptime()),
+    environment: process.env.NODE_ENV || 'development',
+    version: require('../package.json').version,
+    issues: health.issues || []
   });
+});
+
+// Detailed health check endpoint
+app.get('/health/detailed', (req, res) => {
+  const metrics = monitoringService.getMetrics();
+  res.status(200).json({
+    ...metrics,
+    endpoints: {
+      health: '/health',
+      metrics: '/metrics',
+      api: '/api'
+    }
+  });
+});
+
+// Metrics endpoint for monitoring systems
+app.get('/metrics', (req, res) => {
+  const metrics = monitoringService.getMetrics();
+  res.status(200).json(metrics);
 });
 
 // API routes

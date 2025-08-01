@@ -340,42 +340,68 @@ class AWSService {
   }
 
   /**
-   * Test AWS connection and permissions
+   * Test AWS connection and permissions with retry logic
    * @returns {Object} Connection test results
    */
   async testConnection() {
-    try {
-      // Test Cost Explorer access
-      const now = new Date();
-      const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-      
-      const testParams = {
-        TimePeriod: {
-          Start: yesterday.toISOString().split('T')[0],
-          End: now.toISOString().split('T')[0],
-        },
-        Granularity: 'DAILY',
-        Metrics: ['BlendedCost'],
-      };
+    const maxRetries = 3;
+    let lastError = null;
 
-      const command = new GetCostAndUsageCommand(testParams);
-      await this.costExplorerClient.send(command);
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        // Test Cost Explorer access
+        const now = new Date();
+        const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+        
+        const testParams = {
+          TimePeriod: {
+            Start: yesterday.toISOString().split('T')[0],
+            End: now.toISOString().split('T')[0],
+          },
+          Granularity: 'DAILY',
+          Metrics: ['BlendedCost'],
+        };
 
-      logger.info('AWS connection test successful');
-      return {
-        success: true,
-        message: 'AWS Cost Explorer connection successful',
-        timestamp: new Date().toISOString(),
-      };
+        const command = new GetCostAndUsageCommand(testParams);
+        const response = await this.costExplorerClient.send(command);
 
-    } catch (error) {
-      logger.error('AWS connection test failed:', error);
-      return {
-        success: false,
-        message: `AWS connection failed: ${error.message}`,
-        timestamp: new Date().toISOString(),
-      };
+        // Additional validation - check if we got valid data structure
+        if (!response.ResultsByTime) {
+          throw new Error('Invalid response structure from Cost Explorer');
+        }
+
+        logger.info(`AWS connection test successful on attempt ${attempt}`);
+        return {
+          success: true,
+          message: 'AWS Cost Explorer connection successful',
+          region: this.region,
+          roleArn: this.roleArn ? 'configured' : 'not configured',
+          timestamp: new Date().toISOString(),
+        };
+
+      } catch (error) {
+        lastError = error;
+        logger.warn(`AWS connection test attempt ${attempt} failed:`, error.message);
+        
+        // Don't retry on authentication/authorization errors
+        if (error.name === 'AccessDenied' || error.name === 'UnauthorizedOperation') {
+          break;
+        }
+        
+        // Wait before retrying (exponential backoff)
+        if (attempt < maxRetries) {
+          await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
+        }
+      }
     }
+
+    logger.error('AWS connection test failed after all attempts:', lastError);
+    return {
+      success: false,
+      message: `AWS connection failed: ${lastError.message}`,
+      attempts: maxRetries,
+      timestamp: new Date().toISOString(),
+    };
   }
 }
 
