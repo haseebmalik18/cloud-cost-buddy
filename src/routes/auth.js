@@ -90,13 +90,8 @@ const loginSchema = Joi.object({
   password: Joi.string().required(),
 });
 
-/**
- * POST /api/auth/register
- * Register a new user account
- */
 router.post('/register', registrationLimiter, sanitizeInput, async (req, res, next) => {
   try {
-    // Validate request body
     const { error, value } = registerSchema.validate(req.body);
     if (error) {
       return res.status(400).json({
@@ -113,7 +108,6 @@ router.post('/register', registrationLimiter, sanitizeInput, async (req, res, ne
 
     const { email, password, firstName, lastName } = value;
 
-    // Validate email format more strictly
     if (!validator.isEmail(email)) {
       return res.status(400).json({
         success: false,
@@ -122,8 +116,6 @@ router.post('/register', registrationLimiter, sanitizeInput, async (req, res, ne
         timestamp: new Date().toISOString()
       });
     }
-
-    // Validate password strength
     const passwordValidation = passwordSchema.validate(password, { list: true });
     if (passwordValidation.length > 0) {
       return res.status(400).json({
@@ -144,8 +136,6 @@ router.post('/register', registrationLimiter, sanitizeInput, async (req, res, ne
         timestamp: new Date().toISOString()
       });
     }
-
-    // Check if user already exists
     const existingUser = await User.findOne({ where: { email: email.toLowerCase() } });
     if (existingUser) {
       return res.status(409).json({
@@ -155,8 +145,6 @@ router.post('/register', registrationLimiter, sanitizeInput, async (req, res, ne
         timestamp: new Date().toISOString()
       });
     }
-
-    // Hash password and create user
     const passwordHash = await User.hashPassword(password);
     const user = await User.create({
       email: email.toLowerCase(),
@@ -165,8 +153,6 @@ router.post('/register', registrationLimiter, sanitizeInput, async (req, res, ne
       last_name: lastName,
       subscription_tier: 'free'
     });
-
-    // Generate tokens
     const accessToken = generateToken(user);
     const refreshToken = generateRefreshToken(user);
 

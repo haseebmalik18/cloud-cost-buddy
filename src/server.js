@@ -20,16 +20,14 @@ const gcpRoutes = require('./routes/gcp');
 const dashboardRoutes = require('./routes/dashboard');
 const alertRoutes = require('./routes/alerts');
 const { initializeDatabase } = require('./database/init');
+const schedulerService = require('./services/schedulerService');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Trust proxy configuration
 if (process.env.TRUST_PROXY === 'true') {
   app.set('trust proxy', 1);
 }
-
-// Enhanced security middleware
 app.use(helmet({
   contentSecurityPolicy: process.env.ENABLE_CSP === 'true' ? {
     directives: {
@@ -53,8 +51,6 @@ app.use(helmet({
   xssFilter: true,
   referrerPolicy: { policy: "same-origin" }
 }));
-
-// CORS configuration for mobile app
 app.use(cors({
   origin: ['https://cloudcostbuddy.app', 'https://app.cloudcostbuddy.com'],
   credentials: true,
@@ -62,10 +58,9 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 
-// Rate limiting to prevent API abuse
 const limiter = rateLimit({
-  windowMs: parseInt(process.env.API_RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000, // 15 minutes
-  max: parseInt(process.env.API_RATE_LIMIT_MAX_REQUESTS) || 100, // limit each IP to 100 requests per windowMs
+  windowMs: parseInt(process.env.API_RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000,
+  max: parseInt(process.env.API_RATE_LIMIT_MAX_REQUESTS) || 100,
   message: {
     error: 'Too many requests from this IP, please try again later.',
     retryAfter: Math.ceil((parseInt(process.env.API_RATE_LIMIT_WINDOW_MS) || 900000) / 1000)
@@ -75,31 +70,22 @@ const limiter = rateLimit({
 });
 
 app.use(limiter);
-
-// Request ID middleware for tracing
 app.use(requestId);
-
-// Metrics recording middleware
 app.use(recordMetrics);
-
-// Request logging with request ID
 app.use(morgan('combined', {
   stream: {
     write: (message) => logger.info(message.trim())
   }
 }));
 
-// Body parsing middleware
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
-
-// Session configuration
 const { sequelize } = require('./models');
 const sessionStore = new SequelizeStore({
   db: sequelize,
   tableName: 'sessions',
-  checkExpirationInterval: 15 * 60 * 1000, // 15 minutes
-  expiration: 24 * 60 * 60 * 1000 // 24 hours
+  checkExpirationInterval: 15 * 60 * 1000,
+  expiration: 24 * 60 * 60 * 1000
 });
 
 app.use(session({
@@ -113,14 +99,11 @@ app.use(session({
   cookie: {
     secure: process.env.NODE_ENV === 'production',
     httpOnly: true,
-    maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    maxAge: 24 * 60 * 60 * 1000
   }
 }));
 
-// Global input sanitization
 app.use(sanitizeInput);
-
-// Health check endpoint
 app.get('/health', (req, res) => {
   const health = monitoringService.getHealthStatus();
   const statusCode = health.status === 'healthy' ? 200 : 
@@ -135,8 +118,6 @@ app.get('/health', (req, res) => {
     issues: health.issues || []
   });
 });
-
-// Detailed health check endpoint
 app.get('/health/detailed', (req, res) => {
   const metrics = monitoringService.getMetrics();
   res.status(200).json({
@@ -148,14 +129,10 @@ app.get('/health/detailed', (req, res) => {
     }
   });
 });
-
-// Metrics endpoint for monitoring systems
 app.get('/metrics', (req, res) => {
   const metrics = monitoringService.getMetrics();
   res.status(200).json(metrics);
 });
-
-// API routes
 app.use('/api/auth', authRoutes);
 app.use('/api/accounts', accountRoutes);
 app.use('/api/aws', awsRoutes);
@@ -163,8 +140,6 @@ app.use('/api/azure', azureRoutes);
 app.use('/api/gcp', gcpRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/alerts', alertRoutes);
-
-// API info endpoint
 app.get('/api', (req, res) => {
   res.json({
     name: 'CloudCost Buddy API',
@@ -183,8 +158,6 @@ app.get('/api', (req, res) => {
     documentation: 'https://github.com/cloudcostbuddy/api-docs'
   });
 });
-
-// 404 handler for unmatched routes
 app.use('*', (req, res) => {
   res.status(404).json({
     error: 'Endpoint not found',
@@ -193,28 +166,26 @@ app.use('*', (req, res) => {
   });
 });
 
-// Global error handling middleware
 app.use(errorHandler);
-
-// Graceful shutdown handling
 process.on('SIGTERM', () => {
   logger.info('SIGTERM received, shutting down gracefully');
+  schedulerService.stop();
   process.exit(0);
 });
 
 process.on('SIGINT', () => {
   logger.info('SIGINT received, shutting down gracefully');
+  schedulerService.stop();
   process.exit(0);
 });
 
-// Initialize database and start server
 const startServer = async () => {
   try {
-    // Initialize database
     await initializeDatabase();
     logger.info('Database initialized successfully');
 
-    // Start server
+    schedulerService.start();
+    logger.info('Scheduler service started');
     app.listen(PORT, () => {
       logger.info(`CloudCost Buddy API server running on port ${PORT}`);
       logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);

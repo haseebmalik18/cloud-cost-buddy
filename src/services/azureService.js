@@ -2,38 +2,27 @@ const { ConsumptionManagementClient } = require('@azure/arm-consumption');
 const { DefaultAzureCredential, ClientSecretCredential } = require('@azure/identity');
 const logger = require('../utils/logger');
 
-/**
- * Azure Cost Management Service
- * Handles Azure Cost Management + Billing API integration with Service Principal authentication
- */
 class AzureService {
   constructor(userCredentials = null) {
-    // Use user credentials if provided, otherwise fall back to environment
     if (userCredentials) {
       this.subscriptionId = userCredentials.subscriptionId;
       this.clientId = userCredentials.clientId;
       this.clientSecret = userCredentials.clientSecret;
       this.tenantId = userCredentials.tenantId;
     } else {
-      // Legacy: use environment variables for single-tenant mode
       this.subscriptionId = process.env.AZURE_SUBSCRIPTION_ID;
       this.clientId = process.env.AZURE_CLIENT_ID;
       this.clientSecret = process.env.AZURE_CLIENT_SECRET;
       this.tenantId = process.env.AZURE_TENANT_ID;
     }
     
-    // Initialize client with appropriate credentials
     this.initializeClient();
   }
 
-  /**
-   * Initialize Azure SDK client with Service Principal credentials
-   */
   initializeClient() {
     try {
       let credential;
 
-      // Use Service Principal credentials if available, otherwise use default credential chain
       if (this.clientId && this.clientSecret && this.tenantId) {
         credential = new ClientSecretCredential(
           this.tenantId,
@@ -42,7 +31,6 @@ class AzureService {
         );
         logger.info(`Azure client initialized with Service Principal: ${this.clientId}`);
       } else {
-        // Use default credential chain (managed identity, environment variables, etc.)
         credential = new DefaultAzureCredential();
         logger.info('Azure client initialized with default credential chain');
       }
@@ -58,11 +46,6 @@ class AzureService {
     }
   }
 
-  /**
-   * Get current month cost data from Azure
-   * @param {Object} options - Query options
-   * @returns {Object} Formatted cost data
-   */
   async getCurrentMonthCosts(options = {}) {
     try {
       const now = new Date();
@@ -95,7 +78,6 @@ class AzureService {
         }
       };
 
-      // Add service filter if specified
       if (options.services && options.services.length > 0) {
         queryParameters.dataset.filter = {
           dimensions: {
@@ -120,13 +102,6 @@ class AzureService {
     }
   }
 
-  /**
-   * Get cost trends for specified time period
-   * @param {string} startDate - Start date (YYYY-MM-DD)
-   * @param {string} endDate - End date (YYYY-MM-DD)
-   * @param {string} granularity - Daily or Monthly
-   * @returns {Object} Formatted trends data
-   */
   async getCostTrends(startDate, endDate, granularity = 'Daily') {
     try {
       const scope = `/subscriptions/${this.subscriptionId}`;
@@ -145,11 +120,6 @@ class AzureService {
     }
   }
 
-  /**
-   * Get top cost-driving Azure services
-   * @param {number} limit - Number of top services to return
-   * @returns {Array} Top services with costs
-   */
   async getTopServices(limit = 5) {
     try {
       const now = new Date();
@@ -182,7 +152,6 @@ class AzureService {
         }
       }
 
-      // Convert to array and sort by cost descending
       return Array.from(servicesCosts.values())
         .sort((a, b) => b.cost - a.cost)
         .slice(0, limit);
@@ -193,22 +162,14 @@ class AzureService {
     }
   }
 
-  /**
-   * Get Azure budget information using Consumption Management API
-   * @returns {Array} Budget information
-   */
   async getBudgets() {
     try {
-      // Azure budgets are managed through the Consumption Management API
-      // Note: This requires 'Microsoft.Consumption/budgets/read' permission
       
       const scope = `/subscriptions/${this.subscriptionId}`;
       
-      // Get current month costs for actual spend calculation
       const currentCosts = await this.getCurrentMonthCosts();
       
       try {
-        // Attempt to get actual budgets using the budgets operations
         const budgets = await this.consumptionClient.budgets.list(scope);
         
         const budgetInfo = [];
@@ -216,7 +177,6 @@ class AzureService {
           const budgetLimit = budget.amount || 1000;
           const actualSpend = currentCosts.totalCost;
           
-          // Calculate forecasted spend based on current month progress
           const now = new Date();
           const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
           const dayOfMonth = now.getDate();
@@ -240,30 +200,64 @@ class AzureService {
           return budgetInfo;
         }
       } catch (budgetError) {
-        logger.warn('Azure budgets API not accessible, creating estimated budget:', budgetError.message);
+        logger.warn('Azure budgets API not accessible, attempting alternative budget retrieval:', budgetError.message);
+        
+        try {
+          const { BillingManagementClient } = require('@azure/arm-billing');
+          const billingClient = new BillingManagementClient(this.credential, this.subscriptionId);
+          
+          const billingProfiles = await billingClient.billingProfiles.listByBillingAccount(this.subscriptionId);
+          
+          if (billingProfiles && billingProfiles.length > 0) {
+            const profile = billingProfiles[0];
+            const spendingLimit = profile.spendingLimit || profile.billingProfileProperties?.spendingLimit;
+            
+            if (spendingLimit && spendingLimit !== 'Off') {
+              const budgetLimit = parseFloat(spendingLimit) || Math.max(currentCosts.totalCost * 1.5, 1000);
+              const actualSpend = currentCosts.totalCost;
+              
+              const now = new Date();
+              const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+              const dayOfMonth = now.getDate();
+              const forecastedSpend = (actualSpend / dayOfMonth) * daysInMonth;
+
+              return [{
+                budgetName: profile.displayName || 'Azure Spending Limit',
+                budgetLimit,
+                actualSpend,
+                forecastedSpend,
+                currency: 'USD',
+                timeUnit: 'Monthly',
+                budgetType: 'Cost',
+                utilizationPercentage: (actualSpend / budgetLimit) * 100,
+                budgetId: profile.name || 'billing-profile-budget'
+              }];
+            }
+          }
+        } catch (billingError) {
+          logger.warn('Alternative budget retrieval failed:', billingError.message);
+        }
+
+        const estimatedBudget = Math.max(currentCosts.totalCost * 1.5, 1000);
+        const actualSpend = currentCosts.totalCost;
+        
+        const now = new Date();
+        const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+        const dayOfMonth = now.getDate();
+        const forecastedSpend = (actualSpend / dayOfMonth) * daysInMonth;
+
+        return [{
+          budgetName: 'System Generated Budget',
+          budgetLimit: estimatedBudget,
+          actualSpend,
+          forecastedSpend,
+          currency: 'USD',
+          timeUnit: 'Monthly',
+          budgetType: 'Cost',
+          utilizationPercentage: (actualSpend / estimatedBudget) * 100,
+          budgetId: 'system-generated-budget'
+        }];
       }
-
-      // Fallback: create estimated budget based on current spend
-      const estimatedBudget = Math.max(currentCosts.totalCost * 1.5, 1000); // 150% of current spend or $1000 minimum
-      const actualSpend = currentCosts.totalCost;
-      
-      // Calculate forecasted spend
-      const now = new Date();
-      const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-      const dayOfMonth = now.getDate();
-      const forecastedSpend = (actualSpend / dayOfMonth) * daysInMonth;
-
-      return [{
-        budgetName: 'Estimated Monthly Budget',
-        budgetLimit: estimatedBudget,
-        actualSpend,
-        forecastedSpend,
-        currency: 'USD',
-        timeUnit: 'Monthly',
-        budgetType: 'Cost',
-        utilizationPercentage: (actualSpend / estimatedBudget) * 100,
-        budgetId: 'estimated-budget'
-      }];
 
     } catch (error) {
       logger.error('Error fetching Azure budgets:', error);
@@ -271,10 +265,6 @@ class AzureService {
     }
   }
 
-  /**
-   * Get cost forecast for next month using Azure Cost Management Forecast API
-   * @returns {Object} Forecast data
-   */
   async getCostForecast() {
     try {
       const now = new Date();
@@ -284,7 +274,6 @@ class AzureService {
       const scope = `/subscriptions/${this.subscriptionId}`;
 
       try {
-        // Use Azure Cost Management Forecast API if available
         const forecastParams = {
           type: 'Usage', // or 'ActualCost'
           timeframe: 'Custom',
@@ -305,7 +294,6 @@ class AzureService {
           includeFreshPartialCost: false
         };
 
-        // Use Azure Cost Management Forecast REST API
         const forecastResponse = await this.queryForecastAPI(scope, forecastParams);
         
         if (forecastResponse && forecastResponse.properties && forecastResponse.properties.rows) {
@@ -326,7 +314,6 @@ class AzureService {
         logger.warn('Azure Forecast API not accessible, using trend-based forecast:', forecastError.message);
       }
 
-      // Fallback: trend-based forecast using historical data
       const currentCosts = await this.getCurrentMonthCosts();
       const previousMonthCosts = await this.getPreviousMonthCosts();
       
@@ -334,11 +321,9 @@ class AzureService {
       let trendMultiplier = 1.0;
       if (previousMonthCosts && previousMonthCosts.totalCost > 0) {
         trendMultiplier = currentCosts.totalCost / previousMonthCosts.totalCost;
-        // Cap extreme variations
-        trendMultiplier = Math.max(0.5, Math.min(2.0, trendMultiplier));
+          trendMultiplier = Math.max(0.5, Math.min(2.0, trendMultiplier));
       }
       
-      // Apply seasonal adjustments (higher costs in business months)
       const nextMonth = startOfNextMonth.getMonth();
       const seasonalMultiplier = [1.0, 1.1, 1.1, 1.1, 1.1, 1.0, 0.9, 0.9, 1.1, 1.1, 1.1, 0.95][nextMonth];
       
@@ -361,10 +346,6 @@ class AzureService {
     }
   }
 
-  /**
-   * Get previous month costs for trend analysis
-   * @returns {Object} Previous month cost data
-   */
   async getPreviousMonthCosts() {
     try {
       const now = new Date();
@@ -387,17 +368,10 @@ class AzureService {
     }
   }
 
-  /**
-   * Query Azure Cost Management Forecast API via REST
-   * @param {string} scope - Azure scope
-   * @param {Object} params - Forecast parameters
-   * @returns {Object} Forecast response
-   */
   async queryForecastAPI(scope, params) {
     try {
       const axios = require('axios');
       
-      // Get access token from the credential
       const tokenResponse = await this.consumptionClient.credential.getToken([
         'https://management.azure.com/.default'
       ]);
@@ -432,13 +406,6 @@ class AzureService {
     }
   }
 
-  /**
-   * Format Azure cost response
-   * @param {Object} result - Raw Azure API response
-   * @param {Date} startDate - Period start date
-   * @param {Date} endDate - Period end date
-   * @returns {Object} Formatted response
-   */
   formatCostResponse(result, startDate, endDate) {
     const response = {
       totalCost: 0,
@@ -453,7 +420,6 @@ class AzureService {
     const servicesMap = new Map();
 
     try {
-      // Process usage details
       for (const usage of result) {
         if (!usage || typeof usage.cost !== 'number') continue;
         
@@ -475,7 +441,6 @@ class AzureService {
         }
       }
 
-      // Convert services map to array and sort by cost
       response.services = Array.from(servicesMap.values())
         .sort((a, b) => b.cost - a.cost);
 
@@ -486,12 +451,6 @@ class AzureService {
     return response;
   }
 
-  /**
-   * Format trends response for time series data
-   * @param {Object} result - Raw Azure API response
-   * @param {string} granularity - daily or monthly
-   * @returns {Object} Formatted trends data
-   */
   formatTrendsResponse(result, granularity) {
     const response = {
       trends: [],
@@ -533,7 +492,6 @@ class AzureService {
         }
       }
 
-      // Convert to array and sort by date
       response.trends = Array.from(trendsMap.values())
         .sort((a, b) => new Date(a.date) - new Date(b.date));
 
@@ -544,10 +502,121 @@ class AzureService {
     return response;
   }
 
-  /**
-   * Test Azure connection and permissions
-   * @returns {Object} Connection test results
-   */
+  async getCosts({ startDate, endDate, granularity = 'Daily' }) {
+    try {
+      const scope = `/subscriptions/${this.subscriptionId}`;
+      
+      const queryParams = {
+        type: 'ActualCost',
+        timeframe: 'Custom',
+        timePeriod: {
+          from: startDate,
+          to: endDate
+        },
+        dataset: {
+          granularity: granularity,
+          aggregation: {
+            totalCost: {
+              name: 'Cost',
+              function: 'Sum'
+            }
+          },
+          grouping: []
+        }
+      };
+
+      const iterator = this.consumptionClient.query.usage(scope, queryParams);
+      const results = [];
+      
+      for await (const result of iterator) {
+        results.push(result);
+      }
+
+      let totalCost = 0;
+      const trends = [];
+      
+      if (results.length > 0 && results[0].rows) {
+        results[0].rows.forEach(row => {
+          const cost = parseFloat(row[0]) || 0;
+          const date = row[1]; // Assuming date is in second column
+          totalCost += cost;
+          
+          trends.push({
+            date,
+            cost,
+            currency: results[0].properties?.currency || 'USD',
+          });
+        });
+      }
+
+      return {
+        totalCost,
+        currency: results[0]?.properties?.currency || 'USD',
+        trends,
+        services: [],
+      };
+    } catch (error) {
+      logger.error('Error fetching Azure costs:', error);
+      throw new Error(`Failed to fetch Azure costs: ${error.message}`);
+    }
+  }
+
+  async getTrends({ startDate, endDate, granularity = 'Daily' }) {
+    try {
+      const scope = `/subscriptions/${this.subscriptionId}`;
+      
+      const queryParams = {
+        type: 'ActualCost',
+        timeframe: 'Custom',
+        timePeriod: {
+          from: startDate,
+          to: endDate
+        },
+        dataset: {
+          granularity: granularity,
+          aggregation: {
+            totalCost: {
+              name: 'Cost',
+              function: 'Sum'
+            }
+          }
+        }
+      };
+
+      const iterator = this.consumptionClient.query.usage(scope, queryParams);
+      const results = [];
+      
+      for await (const result of iterator) {
+        results.push(result);
+      }
+
+      let totalCost = 0;
+      const trends = [];
+      
+      if (results.length > 0 && results[0].rows) {
+        results[0].rows.forEach(row => {
+          const cost = parseFloat(row[0]) || 0;
+          const date = row[1]; // Assuming date is in second column
+          totalCost += cost;
+          
+          trends.push({
+            date,
+            cost,
+          });
+        });
+      }
+
+      return {
+        totalCost,
+        currency: results[0]?.properties?.currency || 'USD',
+        trends,
+      };
+    } catch (error) {
+      logger.error('Error fetching Azure trends:', error);
+      throw new Error(`Failed to fetch Azure trends: ${error.message}`);
+    }
+  }
+
   async testConnection() {
     try {
       // Test by fetching a small amount of usage data

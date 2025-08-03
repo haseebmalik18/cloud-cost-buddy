@@ -85,9 +85,8 @@ if (!fs.existsSync(logsDir)) {
   fs.mkdirSync(logsDir, { recursive: true });
 }
 
-// In production, don't log to console to reduce noise
 if (process.env.NODE_ENV === 'production') {
-  logger.remove(logger.transports[0]); // Remove console transport
+  logger.remove(logger.transports[0]);
 }
 
 module.exports = logger;

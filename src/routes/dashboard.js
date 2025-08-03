@@ -318,22 +318,211 @@ router.get('/health', authenticateToken, async (req, res, next) => {
   }
 });
 
+router.get('/alerts', authenticateToken, async (req, res, next) => {
+  try {
+    const alertService = require('../services/alertService');
+    const activeAlerts = await alertService.getActiveAlerts(req.userId);
+    
+    res.status(200).json({
+      success: true,
+      data: {
+        alerts: activeAlerts,
+        count: activeAlerts.length
+      },
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    next(error);
+  }
+});
+
 /**
- * GET /api/dashboard/alerts
- * Get active alerts from all cloud providers
+ * GET /api/dashboard/trends/30-day
+ * Get 30-day cost trends across all cloud providers with detailed analytics
  */
-router.get('/alerts', (req, res) => {
-  res.status(501).json({
-    success: false,
-    error: 'Not Implemented',
-    message: 'Alert system not yet implemented',
-    timestamp: new Date().toISOString()
-  });
+router.get('/trends/30-day', authenticateToken, sanitizeInput, async (req, res, next) => {
+  try {
+    const { provider = 'all' } = req.query;
+    
+    // Calculate date range for last 30 days
+    const endDate = new Date();
+    const startDate = new Date(endDate.getTime() - 30 * 24 * 60 * 60 * 1000);
+    
+    const formattedStartDate = startDate.toISOString().split('T')[0];
+    const formattedEndDate = endDate.toISOString().split('T')[0];
+
+    // Get user's cloud services
+    const userServices = await CloudServiceFactory.getAllUserServices(req.userId);
+
+    const trends = {
+      period: { 
+        startDate: formattedStartDate, 
+        endDate: formattedEndDate,
+        days: 30
+      },
+      granularity: 'Daily',
+      providers: {},
+      combined: {
+        trends: [],
+        totalCost: 0,
+        currency: 'USD',
+        analytics: {
+          averageDailyCost: 0,
+          maxDailyCost: 0,
+          minDailyCost: 0,
+          costGrowthRate: 0,
+          volatility: 0
+        }
+      },
+      summary: {
+        totalProviders: 0,
+        activeProviders: 0,
+        topProvider: null,
+        costDistribution: {}
+      }
+    };
+
+    const providers = provider === 'all' ? ['aws', 'azure', 'gcp'] : [provider];
+    const trendResults = [];
+
+    // Process each provider with user's accounts
+    for (const providerName of providers) {
+      if (userServices[providerName]) {
+        const providerTrends = [];
+        
+        // Fetch trends for each account of this provider
+        for (const serviceInstance of userServices[providerName]) {
+          try {
+            const accountTrends = await serviceInstance.service.getCostTrends(
+              formattedStartDate, 
+              formattedEndDate, 
+              'Daily'
+            );
+            
+            if (accountTrends && accountTrends.trends) {
+              providerTrends.push({
+                accountId: serviceInstance.account.account_id,
+                accountName: serviceInstance.account.account_name,
+                trends: accountTrends.trends,
+                totalCost: accountTrends.totalCost || 0,
+                currency: accountTrends.currency || 'USD'
+              });
+            }
+          } catch (error) {
+            logger.error(`Error fetching 30-day trends for ${providerName} account ${serviceInstance.account.account_id}:`, error);
+          }
+        }
+
+        // Aggregate provider trends
+        if (providerTrends.length > 0) {
+          const aggregatedTrends = new Map();
+          let providerTotalCost = 0;
+
+          providerTrends.forEach(accountData => {
+            providerTotalCost += accountData.totalCost;
+            
+            accountData.trends.forEach(trend => {
+              const dateKey = trend.date;
+              if (aggregatedTrends.has(dateKey)) {
+                aggregatedTrends.get(dateKey).cost += trend.cost;
+              } else {
+                aggregatedTrends.set(dateKey, {
+                  date: dateKey,
+                  cost: trend.cost,
+                  currency: 'USD'
+                });
+              }
+            });
+          });
+
+          const sortedTrends = Array.from(aggregatedTrends.values())
+            .sort((a, b) => new Date(a.date) - new Date(b.date));
+
+          trends.providers[providerName] = {
+            available: true,
+            accounts: providerTrends,
+            trends: sortedTrends,
+            totalCost: providerTotalCost,
+            currency: 'USD',
+            analytics: calculateTrendAnalytics(sortedTrends)
+          };
+        } else {
+          trends.providers[providerName] = { 
+            available: false, 
+            error: 'No accounts available or failed to fetch data' 
+          };
+        }
+      } else {
+        trends.providers[providerName] = { 
+          available: false, 
+          error: 'No accounts connected' 
+        };
+      }
+    }
+
+    // Combine trends from all providers
+    const combinedTrendsMap = new Map();
+    let totalCost = 0;
+    let activeProviders = 0;
+    const costDistribution = {};
+
+    Object.entries(trends.providers).forEach(([providerName, providerData]) => {
+      if (providerData.available && providerData.trends) {
+        activeProviders++;
+        totalCost += providerData.totalCost;
+        costDistribution[providerName] = providerData.totalCost;
+        
+        providerData.trends.forEach(trend => {
+          const dateKey = trend.date;
+          if (combinedTrendsMap.has(dateKey)) {
+            combinedTrendsMap.get(dateKey).cost += trend.cost;
+          } else {
+            combinedTrendsMap.set(dateKey, {
+              date: dateKey,
+              cost: trend.cost,
+              currency: 'USD'
+            });
+          }
+        });
+      }
+    });
+
+    const combinedTrendsArray = Array.from(combinedTrendsMap.values())
+      .sort((a, b) => new Date(a.date) - new Date(b.date));
+
+    trends.combined = {
+      trends: combinedTrendsArray,
+      totalCost,
+      currency: 'USD',
+      analytics: calculateTrendAnalytics(combinedTrendsArray)
+    };
+
+    // Calculate summary
+    trends.summary = {
+      totalProviders: providers.length,
+      activeProviders,
+      topProvider: activeProviders > 0 ? Object.entries(costDistribution)
+        .sort(([,a], [,b]) => b - a)[0]?.[0] : null,
+      costDistribution
+    };
+
+    logger.info(`30-day trends retrieved for user ${req.userId}: $${totalCost} USD across ${activeProviders} providers`);
+
+    res.status(200).json({
+      success: true,
+      data: trends,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    next(error);
+  }
 });
 
 /**
  * GET /api/dashboard/trends
- * Get cost trends across all cloud providers
+ * Get cost trends across all cloud providers with flexible date range
  */
 router.get('/trends', authenticateToken, sanitizeInput, validateTrendsQuery, async (req, res, next) => {
   try {
@@ -344,7 +533,8 @@ router.get('/trends', authenticateToken, sanitizeInput, validateTrendsQuery, asy
       provider = 'all'
     } = req.query;
 
-    // Validation is now handled by middleware
+    // Get user's cloud services
+    const userServices = await CloudServiceFactory.getAllUserServices(req.userId);
 
     const trends = {
       period: { startDate, endDate },
@@ -358,52 +548,70 @@ router.get('/trends', authenticateToken, sanitizeInput, validateTrendsQuery, asy
     };
 
     const providers = provider === 'all' ? ['aws', 'azure', 'gcp'] : [provider];
-    const trendParams = { startDate, endDate, granularity };
 
-    // Fetch trends from requested providers
-    const trendResults = await Promise.allSettled([
-      providers.includes('aws') ? awsService.getCostTrends(startDate, endDate, granularity) : null,
-      providers.includes('azure') ? azureService.getCostTrends(startDate, endDate, granularity) : null,
-      providers.includes('gcp') ? gcpService.getCostTrends(startDate, endDate, granularity) : null
-    ]);
+    // Process each provider with user's accounts
+    for (const providerName of providers) {
+      if (userServices[providerName]) {
+        const providerTrends = [];
+        
+        // Fetch trends for each account of this provider
+        for (const serviceInstance of userServices[providerName]) {
+          try {
+            const accountTrends = await serviceInstance.service.getCostTrends(
+              startDate, 
+              endDate, 
+              granularity
+            );
+            
+            if (accountTrends && accountTrends.trends) {
+              providerTrends.push({
+                accountId: serviceInstance.account.account_id,
+                accountName: serviceInstance.account.account_name,
+                trends: accountTrends.trends,
+                totalCost: accountTrends.totalCost || 0,
+                currency: accountTrends.currency || 'USD'
+              });
+            }
+          } catch (error) {
+            logger.error(`Error fetching trends for ${providerName} account ${serviceInstance.account.account_id}:`, error);
+          }
+        }
 
-    // Process AWS trends
-    if (trendResults[0] && trendResults[0].status === 'fulfilled' && trendResults[0].value) {
-      const awsTrends = trendResults[0].value;
-      trends.providers.aws = {
-        available: true,
-        trends: awsTrends.trends || [],
-        totalCost: awsTrends.totalCost || 0,
-        currency: awsTrends.currency || 'USD'
-      };
-    } else {
-      trends.providers.aws = { available: false, error: 'Failed to fetch AWS trends' };
-    }
+        // Aggregate provider trends
+        if (providerTrends.length > 0) {
+          const aggregatedTrends = new Map();
+          let providerTotalCost = 0;
 
-    // Process Azure trends
-    if (trendResults[1] && trendResults[1].status === 'fulfilled' && trendResults[1].value) {
-      const azureTrends = trendResults[1].value;
-      trends.providers.azure = {
-        available: true,
-        trends: azureTrends.trends || [],
-        totalCost: azureTrends.totalCost || 0,
-        currency: azureTrends.currency || 'USD'
-      };
-    } else {
-      trends.providers.azure = { available: false, error: 'Failed to fetch Azure trends' };
-    }
+          providerTrends.forEach(accountData => {
+            providerTotalCost += accountData.totalCost;
+            
+            accountData.trends.forEach(trend => {
+              const dateKey = trend.date;
+              if (aggregatedTrends.has(dateKey)) {
+                aggregatedTrends.get(dateKey).cost += trend.cost;
+              } else {
+                aggregatedTrends.set(dateKey, {
+                  date: dateKey,
+                  cost: trend.cost,
+                  currency: 'USD'
+                });
+              }
+            });
+          });
 
-    // Process GCP trends
-    if (trendResults[2] && trendResults[2].status === 'fulfilled' && trendResults[2].value) {
-      const gcpTrends = trendResults[2].value;
-      trends.providers.gcp = {
-        available: true,
-        trends: gcpTrends.trends || [],
-        totalCost: gcpTrends.totalCost || 0,
-        currency: gcpTrends.currency || 'USD'
-      };
-    } else {
-      trends.providers.gcp = { available: false, error: 'Failed to fetch GCP trends' };
+          trends.providers[providerName] = {
+            available: true,
+            accounts: providerTrends,
+            trends: Array.from(aggregatedTrends.values()).sort((a, b) => new Date(a.date) - new Date(b.date)),
+            totalCost: providerTotalCost,
+            currency: 'USD'
+          };
+        } else {
+          trends.providers[providerName] = { available: false, error: 'No accounts available or failed to fetch data' };
+        }
+      } else {
+        trends.providers[providerName] = { available: false, error: 'No accounts connected' };
+      }
     }
 
     // Combine trends from all providers
@@ -447,5 +655,48 @@ router.get('/trends', authenticateToken, sanitizeInput, validateTrendsQuery, asy
     next(error);
   }
 });
+
+/**
+ * Helper function to calculate trend analytics
+ */
+function calculateTrendAnalytics(trends) {
+  if (!trends || trends.length === 0) {
+    return {
+      averageDailyCost: 0,
+      maxDailyCost: 0,
+      minDailyCost: 0,
+      costGrowthRate: 0,
+      volatility: 0
+    };
+  }
+
+  const costs = trends.map(t => t.cost);
+  const totalCost = costs.reduce((sum, cost) => sum + cost, 0);
+  const averageDailyCost = totalCost / costs.length;
+  const maxDailyCost = Math.max(...costs);
+  const minDailyCost = Math.min(...costs);
+
+  // Calculate growth rate (first vs last week average)
+  let costGrowthRate = 0;
+  if (trends.length >= 14) {
+    const firstWeekAvg = costs.slice(0, 7).reduce((sum, cost) => sum + cost, 0) / 7;
+    const lastWeekAvg = costs.slice(-7).reduce((sum, cost) => sum + cost, 0) / 7;
+    if (firstWeekAvg > 0) {
+      costGrowthRate = ((lastWeekAvg - firstWeekAvg) / firstWeekAvg) * 100;
+    }
+  }
+
+  // Calculate volatility (standard deviation)
+  const variance = costs.reduce((sum, cost) => sum + Math.pow(cost - averageDailyCost, 2), 0) / costs.length;
+  const volatility = Math.sqrt(variance);
+
+  return {
+    averageDailyCost: Math.round(averageDailyCost * 100) / 100,
+    maxDailyCost: Math.round(maxDailyCost * 100) / 100,
+    minDailyCost: Math.round(minDailyCost * 100) / 100,
+    costGrowthRate: Math.round(costGrowthRate * 10) / 10,
+    volatility: Math.round(volatility * 100) / 100
+  };
+}
 
 module.exports = router;

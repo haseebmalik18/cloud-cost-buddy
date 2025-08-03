@@ -3,47 +3,35 @@ const { BudgetsClient, DescribeBudgetsCommand, DescribeBudgetCommand } = require
 const { fromIni, fromTemporaryCredentials } = require('@aws-sdk/credential-providers');
 const logger = require('../utils/logger');
 
-/**
- * AWS Cost Management Service
- * Handles AWS Cost Explorer and Budgets API integration with secure IAM role access
- */
 class AWSService {
   constructor(userCredentials = null) {
-    // Use user credentials if provided, otherwise fall back to environment
     if (userCredentials) {
       this.region = userCredentials.region || 'us-east-1';
       this.roleArn = userCredentials.roleArn;
       this.externalId = userCredentials.externalId;
       this.accountId = userCredentials.accountId;
     } else {
-      // Legacy: use environment variables for single-tenant mode
       this.region = process.env.AWS_REGION || 'us-east-1';
       this.roleArn = process.env.AWS_ROLE_ARN;
       this.accountId = process.env.AWS_ACCOUNT_ID;
     }
     
-    // Initialize clients with appropriate credentials
     this.initializeClients();
   }
 
-  /**
-   * Initialize AWS SDK clients with secure credential chain
-   */
   initializeClients() {
     try {
       const credentialOptions = {
         region: this.region,
       };
 
-      // Use IAM role if specified, otherwise use default credential chain
       if (this.roleArn) {
         const assumeRoleParams = {
           RoleArn: this.roleArn,
           RoleSessionName: 'CloudCostBuddy-Session',
-          DurationSeconds: 3600, // 1 hour session
+          DurationSeconds: 3600,
         };
         
-        // Add external ID if provided (for cross-account security)
         if (this.externalId) {
           assumeRoleParams.ExternalId = this.externalId;
         }
@@ -53,7 +41,6 @@ class AWSService {
         });
         logger.info(`AWS clients initialized with IAM role: ${this.roleArn}`);
       } else {
-        // Use default credential chain (environment variables, instance profile, etc.)
         credentialOptions.credentials = fromIni();
         logger.info('AWS clients initialized with default credential chain');
       }
@@ -66,12 +53,6 @@ class AWSService {
       throw new Error('AWS client initialization failed');
     }
   }
-
-  /**
-   * Get current month cost and usage data
-   * @param {Object} options - Query options
-   * @returns {Object} Formatted cost data
-   */
   async getCurrentMonthCosts(options = {}) {
     try {
       const now = new Date();
@@ -93,7 +74,6 @@ class AWSService {
         ],
       };
 
-      // Add filters if specified
       if (options.services && options.services.length > 0) {
         params.Filter = {
           Dimensions: {
@@ -113,13 +93,6 @@ class AWSService {
     }
   }
 
-  /**
-   * Get cost data for a specific time period
-   * @param {string} startDate - Start date (YYYY-MM-DD)
-   * @param {string} endDate - End date (YYYY-MM-DD)
-   * @param {string} granularity - DAILY, MONTHLY, or HOURLY
-   * @returns {Object} Formatted cost trends data
-   */
   async getCostTrends(startDate, endDate, granularity = 'DAILY') {
     try {
       const params = {
@@ -147,11 +120,6 @@ class AWSService {
     }
   }
 
-  /**
-   * Get top cost-driving services
-   * @param {number} limit - Number of top services to return
-   * @returns {Array} Top services with costs
-   */
   async getTopServices(limit = 5) {
     try {
       const now = new Date();
@@ -193,7 +161,6 @@ class AWSService {
         });
       }
 
-      // Sort by cost descending and return top N
       return services
         .sort((a, b) => b.cost - a.cost)
         .slice(0, limit);
@@ -204,11 +171,6 @@ class AWSService {
     }
   }
 
-  /**
-   * Get budget information
-   * @param {string} accountId - AWS Account ID
-   * @returns {Array} Budget information
-   */
   async getBudgets(accountId = null) {
     try {
       const targetAccountId = accountId || this.accountId;
@@ -241,10 +203,6 @@ class AWSService {
     }
   }
 
-  /**
-   * Get cost forecast for next month
-   * @returns {Object} Forecast data
-   */
   async getCostForecast() {
     try {
       const now = new Date();
@@ -282,11 +240,6 @@ class AWSService {
     }
   }
 
-  /**
-   * Format Cost Explorer API response
-   * @param {Object} response - Raw API response
-   * @returns {Object} Formatted response
-   */
   formatCostResponse(response) {
     const result = {
       totalCost: 0,
@@ -298,17 +251,14 @@ class AWSService {
     if (response.ResultsByTime && response.ResultsByTime.length > 0) {
       const data = response.ResultsByTime[0];
       
-      // Set period information
       result.period = {
         start: data.TimePeriod?.Start,
         end: data.TimePeriod?.End,
       };
 
-      // Calculate total cost
       result.totalCost = parseFloat(data.Total?.BlendedCost?.Amount || '0');
       result.currency = data.Total?.BlendedCost?.Unit || 'USD';
 
-      // Process service-level data
       data.Groups?.forEach((group) => {
         const serviceName = group.Keys?.[0] || 'Unknown Service';
         const cost = parseFloat(group.Metrics?.BlendedCost?.Amount || '0');
@@ -320,18 +270,12 @@ class AWSService {
         });
       });
 
-      // Sort services by cost descending
       result.services.sort((a, b) => b.cost - a.cost);
     }
 
     return result;
   }
 
-  /**
-   * Format trends response for time series data
-   * @param {Object} response - Raw API response
-   * @returns {Object} Formatted trends data
-   */
   formatTrendsResponse(response) {
     const result = {
       trends: [],
@@ -357,17 +301,94 @@ class AWSService {
     return result;
   }
 
-  /**
-   * Test AWS connection and permissions with retry logic
-   * @returns {Object} Connection test results
-   */
+  async getCosts({ startDate, endDate, granularity = 'DAILY' }) {
+    try {
+      const params = {
+        TimePeriod: {
+          Start: startDate,
+          End: endDate,
+        },
+        Granularity: granularity,
+        Metrics: ['BlendedCost'],
+      };
+
+      const command = new GetCostAndUsageCommand(params);
+      const response = await this.costExplorerClient.send(command);
+
+      let totalCost = 0;
+      const trends = [];
+
+      if (response.ResultsByTime) {
+        response.ResultsByTime.forEach((timeData) => {
+          const cost = parseFloat(timeData.Total?.BlendedCost?.Amount || '0');
+          totalCost += cost;
+          
+          trends.push({
+            date: timeData.TimePeriod?.Start,
+            cost,
+            currency: timeData.Total?.BlendedCost?.Unit || 'USD',
+          });
+        });
+      }
+
+      return {
+        totalCost,
+        currency: response.ResultsByTime?.[0]?.Total?.BlendedCost?.Unit || 'USD',
+        trends,
+        services: [],
+      };
+    } catch (error) {
+      logger.error('Error fetching AWS costs:', error);
+      throw new Error(`Failed to fetch AWS costs: ${error.message}`);
+    }
+  }
+
+  async getTrends({ startDate, endDate, granularity = 'DAILY' }) {
+    try {
+      const params = {
+        TimePeriod: {
+          Start: startDate,
+          End: endDate,
+        },
+        Granularity: granularity,
+        Metrics: ['BlendedCost'],
+      };
+
+      const command = new GetCostAndUsageCommand(params);
+      const response = await this.costExplorerClient.send(command);
+
+      let totalCost = 0;
+      const trends = [];
+
+      if (response.ResultsByTime) {
+        response.ResultsByTime.forEach((timeData) => {
+          const cost = parseFloat(timeData.Total?.BlendedCost?.Amount || '0');
+          totalCost += cost;
+          
+          trends.push({
+            date: timeData.TimePeriod?.Start,
+            cost,
+          });
+        });
+      }
+
+      return {
+        totalCost,
+        currency: response.ResultsByTime?.[0]?.Total?.BlendedCost?.Unit || 'USD',
+        trends,
+      };
+    } catch (error) {
+      logger.error('Error fetching AWS trends:', error);
+      throw new Error(`Failed to fetch AWS trends: ${error.message}`);
+    }
+  }
+
   async testConnection() {
     const maxRetries = 3;
     let lastError = null;
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        // Test Cost Explorer access
         const now = new Date();
         const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
         
@@ -383,7 +404,6 @@ class AWSService {
         const command = new GetCostAndUsageCommand(testParams);
         const response = await this.costExplorerClient.send(command);
 
-        // Additional validation - check if we got valid data structure
         if (!response.ResultsByTime) {
           throw new Error('Invalid response structure from Cost Explorer');
         }
@@ -401,12 +421,10 @@ class AWSService {
         lastError = error;
         logger.warn(`AWS connection test attempt ${attempt} failed:`, error.message);
         
-        // Don't retry on authentication/authorization errors
         if (error.name === 'AccessDenied' || error.name === 'UnauthorizedOperation') {
           break;
         }
         
-        // Wait before retrying (exponential backoff)
         if (attempt < maxRetries) {
           await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
         }

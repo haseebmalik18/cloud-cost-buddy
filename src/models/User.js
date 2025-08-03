@@ -42,6 +42,10 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.ENUM('free', 'pro', 'enterprise'),
       defaultValue: 'free',
     },
+    fcm_tokens: {
+      type: DataTypes.JSON,
+      defaultValue: [],
+    },
   }, {
     tableName: 'users',
     indexes: [

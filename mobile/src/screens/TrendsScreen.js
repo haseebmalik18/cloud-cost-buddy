@@ -60,40 +60,20 @@ const TrendsScreen = ({ navigation }) => {
       }
       setError(null);
 
-      const { startDate, endDate } = getDateRange(selectedPeriod);
-      const granularity = selectedPeriod === '7d' ? 'Daily' : 'Daily';
-
-      // Fetch trends from all providers in parallel
-      const [awsResult, azureResult, gcpResult] = await Promise.allSettled([
-        apiService.aws.getTrends({ startDate, endDate, granularity }),
-        apiService.azure.getTrends({ startDate, endDate, granularity }),
-        apiService.gcp.getTrends({ startDate, endDate, granularity })
-      ]);
-
-      const trendsData = {};
-
-      // Process AWS results
-      if (awsResult.status === 'fulfilled') {
-        trendsData.aws = awsResult.value.data;
+      let response;
+      
+      if (selectedPeriod === '30d') {
+        // Use the new 30-day trends endpoint with analytics
+        response = await apiService.get(`/dashboard/trends/30-day?provider=${selectedProvider}`);
+        setTrendsData(response.data);
       } else {
-        console.warn('AWS trends fetch failed:', awsResult.reason);
+        // Use the flexible trends endpoint for other periods
+        const { startDate, endDate } = getDateRange(selectedPeriod);
+        const granularity = 'Daily';
+        
+        response = await apiService.get(`/dashboard/trends?startDate=${startDate}&endDate=${endDate}&granularity=${granularity}&provider=${selectedProvider}`);
+        setTrendsData(response.data);
       }
-
-      // Process Azure results
-      if (azureResult.status === 'fulfilled') {
-        trendsData.azure = azureResult.value.data;
-      } else {
-        console.warn('Azure trends fetch failed:', azureResult.reason);
-      }
-
-      // Process GCP results
-      if (gcpResult.status === 'fulfilled') {
-        trendsData.gcp = gcpResult.value.data;
-      } else {
-        console.warn('GCP trends fetch failed:', gcpResult.reason);
-      }
-
-      setTrendsData(trendsData);
 
     } catch (err) {
       console.error('Trends fetch error:', err);
@@ -124,37 +104,63 @@ const TrendsScreen = ({ navigation }) => {
     let datasets = [];
     let labels = [];
 
+    // Handle new API response format for 30-day trends
+    if (trendsData.combined && trendsData.combined.trends) {
+      // Use combined trends data
+      const trends = trendsData.combined.trends;
+      datasets.push({
+        data: trends.map(t => t.cost),
+        color: (opacity = 1) => getProviderColor(selectedProvider),
+        strokeWidth: 3
+      });
+      
+      labels = trends.map(t => 
+        new Date(t.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+      );
+
+      return {
+        labels: labels.length > 15 ? labels.filter((_, i) => i % 2 === 0) : labels,
+        datasets: [{
+          ...datasets[0],
+          data: labels.length > 15 ? datasets[0].data.filter((_, i) => i % 2 === 0) : datasets[0].data
+        }],
+        legend: [selectedProvider === 'all' ? 'All Providers' : selectedProvider.toUpperCase()]
+      };
+    }
+
+    // Handle legacy API response format
     if (selectedProvider === 'all') {
       // Combined view
       const providers = ['aws', 'azure', 'gcp'];
-      const colors = [theme.colors.aws, theme.colors.azure, theme.colors.gcp];
+      const colors = ['#FF9500', '#0078D4', '#4285F4'];
       
       providers.forEach((provider, index) => {
-        if (trendsData[provider]) {
+        if (trendsData.providers && trendsData.providers[provider] && trendsData.providers[provider].available) {
           datasets.push({
-            data: trendsData[provider].trends.map(t => t.cost),
+            data: trendsData.providers[provider].trends.map(t => t.cost),
             color: (opacity = 1) => colors[index],
             strokeWidth: 2
           });
         }
       });
       
-      // Use AWS dates as labels (assuming all providers have same dates)
-      if (trendsData.aws) {
-        labels = trendsData.aws.trends.map(t => 
+      // Use first available provider's dates as labels
+      const firstProvider = providers.find(p => trendsData.providers && trendsData.providers[p] && trendsData.providers[p].available);
+      if (firstProvider && trendsData.providers[firstProvider]) {
+        labels = trendsData.providers[firstProvider].trends.map(t => 
           new Date(t.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
         );
       }
     } else {
       // Single provider view
-      if (trendsData[selectedProvider]) {
+      if (trendsData.providers && trendsData.providers[selectedProvider] && trendsData.providers[selectedProvider].available) {
         datasets.push({
-          data: trendsData[selectedProvider].trends.map(t => t.cost),
+          data: trendsData.providers[selectedProvider].trends.map(t => t.cost),
           color: (opacity = 1) => getProviderColor(selectedProvider),
           strokeWidth: 3
         });
         
-        labels = trendsData[selectedProvider].trends.map(t => 
+        labels = trendsData.providers[selectedProvider].trends.map(t => 
           new Date(t.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
         );
       }
@@ -193,6 +199,36 @@ const TrendsScreen = ({ navigation }) => {
       return null;
     }
 
+    // Handle new API response format with analytics
+    if (trendsData.combined && trendsData.combined.analytics) {
+      const analytics = trendsData.combined.analytics;
+      const trends = trendsData.combined.trends || [];
+      
+      let highestDay = { cost: 0, date: '', provider: 'Combined' };
+      let lowestDay = { cost: Infinity, date: '', provider: 'Combined' };
+      
+      trends.forEach(trend => {
+        if (trend.cost > highestDay.cost) {
+          highestDay = { cost: trend.cost, date: trend.date, provider: 'Combined' };
+        }
+        if (trend.cost < lowestDay.cost) {
+          lowestDay = { cost: trend.cost, date: trend.date, provider: 'Combined' };
+        }
+      });
+
+      return {
+        totalCost: trendsData.combined.totalCost || 0,
+        highestDay,
+        lowestDay: lowestDay.cost === Infinity ? { cost: 0, date: '', provider: 'Combined' } : lowestDay,
+        avgDaily: analytics.averageDailyCost || 0,
+        maxDaily: analytics.maxDailyCost || 0,
+        minDaily: analytics.minDailyCost || 0,
+        costGrowthRate: analytics.costGrowthRate || 0,
+        volatility: analytics.volatility || 0
+      };
+    }
+
+    // Handle legacy API response format
     const stats = {
       totalCost: 0,
       highestDay: { cost: 0, date: '', provider: '' },
@@ -202,31 +238,38 @@ const TrendsScreen = ({ navigation }) => {
 
     let totalDays = 0;
 
-    Object.entries(trendsData).forEach(([provider, data]) => {
-      stats.totalCost += data.totalCost || 0;
-      
-      data.trends.forEach(trend => {
-        totalDays++;
-        
-        if (trend.cost > stats.highestDay.cost) {
-          stats.highestDay = {
-            cost: trend.cost,
-            date: trend.date,
-            provider
-          };
-        }
-        
-        if (trend.cost < stats.lowestDay.cost) {
-          stats.lowestDay = {
-            cost: trend.cost,
-            date: trend.date,
-            provider
-          };
+    if (trendsData.providers) {
+      Object.entries(trendsData.providers).forEach(([provider, data]) => {
+        if (data.available && data.trends) {
+          stats.totalCost += data.totalCost || 0;
+          
+          data.trends.forEach(trend => {
+            totalDays++;
+            
+            if (trend.cost > stats.highestDay.cost) {
+              stats.highestDay = {
+                cost: trend.cost,
+                date: trend.date,
+                provider
+              };
+            }
+            
+            if (trend.cost < stats.lowestDay.cost) {
+              stats.lowestDay = {
+                cost: trend.cost,
+                date: trend.date,
+                provider
+              };
+            }
+          });
         }
       });
-    });
+    }
 
     stats.avgDaily = totalDays > 0 ? stats.totalCost / totalDays : 0;
+    if (stats.lowestDay.cost === Infinity) {
+      stats.lowestDay = { cost: 0, date: '', provider: '' };
+    }
 
     return stats;
   };
@@ -397,30 +440,70 @@ const TrendsScreen = ({ navigation }) => {
         )}
 
         {/* Provider Breakdown */}
-        {selectedProvider === 'all' && (
+        {selectedProvider === 'all' && trendsData && (
           <Card style={styles.breakdownCard}>
             <Card.Content>
               <Text variant="titleMedium" style={styles.breakdownTitle}>
                 Provider Breakdown
               </Text>
               
-              {Object.entries(trendsData).map(([provider, data]) => (
-                <View key={provider} style={styles.breakdownItem}>
-                  <View style={styles.breakdownHeader}>
-                    <Icon 
-                      name="circle" 
-                      size={12} 
-                      color={getProviderColor(provider)} 
-                    />
-                    <Text variant="bodyMedium" style={styles.breakdownProvider}>
-                      {provider.toUpperCase()}
+              {/* New API format breakdown */}
+              {trendsData.summary && trendsData.summary.costDistribution && 
+                Object.entries(trendsData.summary.costDistribution).map(([provider, cost]) => (
+                  <View key={provider} style={styles.breakdownItem}>
+                    <View style={styles.breakdownHeader}>
+                      <Icon 
+                        name="circle" 
+                        size={12} 
+                        color={getProviderColor(provider)} 
+                      />
+                      <Text variant="bodyMedium" style={styles.breakdownProvider}>
+                        {provider.toUpperCase()}
+                      </Text>
+                    </View>
+                    <Text variant="bodyMedium" style={styles.breakdownCost}>
+                      {formatCurrency(cost)}
                     </Text>
                   </View>
-                  <Text variant="bodyMedium" style={styles.breakdownCost}>
-                    {formatCurrency(data.totalCost, data.currency)}
+                ))
+              }
+              
+              {/* Legacy API format breakdown */}
+              {trendsData.providers && !trendsData.summary &&
+                Object.entries(trendsData.providers).map(([provider, data]) => (
+                  data.available && (
+                    <View key={provider} style={styles.breakdownItem}>
+                      <View style={styles.breakdownHeader}>
+                        <Icon 
+                          name="circle" 
+                          size={12} 
+                          color={getProviderColor(provider)} 
+                        />
+                        <Text variant="bodyMedium" style={styles.breakdownProvider}>
+                          {provider.toUpperCase()}
+                        </Text>
+                      </View>
+                      <Text variant="bodyMedium" style={styles.breakdownCost}>
+                        {formatCurrency(data.totalCost, data.currency)}
+                      </Text>
+                    </View>
+                  )
+                ))
+              }
+
+              {/* Summary info for 30-day trends */}
+              {trendsData.summary && (
+                <View style={styles.summaryInfo}>
+                  <Text variant="bodySmall" style={styles.summaryText}>
+                    Active providers: {trendsData.summary.activeProviders} / {trendsData.summary.totalProviders}
                   </Text>
+                  {trendsData.summary.topProvider && (
+                    <Text variant="bodySmall" style={styles.summaryText}>
+                      Top provider: {trendsData.summary.topProvider.toUpperCase()}
+                    </Text>
+                  )}
                 </View>
-              ))}
+              )}
             </Card.Content>
           </Card>
         )}
@@ -551,6 +634,16 @@ const styles = StyleSheet.create({
   },
   breakdownCost: {
     fontWeight: 'bold'
+  },
+  summaryInfo: {
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#e0e0e0'
+  },
+  summaryText: {
+    opacity: 0.7,
+    marginBottom: 4
   }
 });
 
