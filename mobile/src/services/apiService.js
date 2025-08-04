@@ -92,81 +92,90 @@ class ApiService {
    * AWS API endpoints
    */
   aws = {
-    // Get current month costs
+    // Get all AWS accounts
+    getAccounts: () => this.client.get('/aws/accounts'),
+    
+    // Test specific account connection
+    testConnection: (accountId) => this.client.get(`/aws/accounts/${accountId}/health`),
+    
+    // Get current month costs (all accounts or specific account)
     getCurrentCosts: (params = {}) => this.client.get('/aws/costs/current', { params }),
     
-    // Get cost trends
+    // Get cost trends (all accounts or specific account)
     getTrends: (params) => this.client.get('/aws/costs/trends', { params }),
     
-    // Get top services
-    getTopServices: (limit = 5) => this.client.get('/aws/services/top', { params: { limit } }),
+    // Get top services (all accounts or specific account)
+    getTopServices: (params = {}) => this.client.get('/aws/services/top', { params }),
     
-    // Get budgets
+    // Get budgets (requires accountId)
     getBudgets: (accountId) => this.client.get('/aws/budgets', { params: { accountId } }),
     
-    // Get forecast
-    getForecast: () => this.client.get('/aws/forecast'),
+    // Get forecast (all accounts or specific account)
+    getForecast: (params = {}) => this.client.get('/aws/forecast', { params }),
     
-    // Get summary
-    getSummary: () => this.client.get('/aws/summary'),
-    
-    // Health check
-    getHealth: () => this.client.get('/aws/health')
+    // Get summary (aggregated across all accounts)
+    getSummary: () => this.client.get('/aws/summary')
   };
 
   /**
    * Azure API endpoints
    */
   azure = {
-    // Get current month costs
+    // Get all Azure subscriptions
+    getSubscriptions: () => this.client.get('/azure/subscriptions'),
+    
+    // Test specific subscription connection
+    testConnection: (subscriptionId) => this.client.get(`/azure/subscriptions/${subscriptionId}/health`),
+    
+    // Get current month costs (all subscriptions or specific subscription)
     getCurrentCosts: (params = {}) => this.client.get('/azure/costs/current', { params }),
     
-    // Get cost trends
+    // Get cost trends (all subscriptions or specific subscription)
     getTrends: (params) => this.client.get('/azure/costs/trends', { params }),
     
-    // Get top services
-    getTopServices: (limit = 5) => this.client.get('/azure/services/top', { params: { limit } }),
+    // Get top services (all subscriptions or specific subscription)
+    getTopServices: (params = {}) => this.client.get('/azure/services/top', { params }),
     
-    // Get budgets
-    getBudgets: () => this.client.get('/azure/budgets'),
+    // Get budgets (requires subscriptionId)
+    getBudgets: (subscriptionId) => this.client.get('/azure/budgets', { params: { subscriptionId } }),
     
-    // Get forecast
-    getForecast: () => this.client.get('/azure/forecast'),
+    // Get forecast (all subscriptions or specific subscription)
+    getForecast: (params = {}) => this.client.get('/azure/forecast', { params }),
     
-    // Get summary
-    getSummary: () => this.client.get('/azure/summary'),
-    
-    // Health check
-    getHealth: () => this.client.get('/azure/health')
+    // Get summary (aggregated across all subscriptions)
+    getSummary: () => this.client.get('/azure/summary')
   };
 
   /**
    * GCP API endpoints
    */
   gcp = {
-    // Get current month costs
+    // Get all GCP projects
+    getProjects: () => this.client.get('/gcp/projects'),
+    
+    // Test specific project connection
+    testConnection: (projectId) => this.client.get(`/gcp/projects/${projectId}/health`),
+    
+    // Get current month costs (all projects or specific project)
     getCurrentCosts: (params = {}) => this.client.get('/gcp/costs/current', { params }),
     
-    // Get cost trends
+    // Get cost trends (all projects or specific project)
     getTrends: (params) => this.client.get('/gcp/costs/trends', { params }),
     
-    // Get top services
-    getTopServices: (limit = 5) => this.client.get('/gcp/services/top', { params: { limit } }),
+    // Get top services (all projects or specific project)
+    getTopServices: (params = {}) => this.client.get('/gcp/services/top', { params }),
     
-    // Get budgets
-    getBudgets: () => this.client.get('/gcp/budgets'),
+    // Get budgets (requires projectId)
+    getBudgets: (projectId) => this.client.get('/gcp/budgets', { params: { projectId } }),
     
-    // Get forecast
-    getForecast: () => this.client.get('/gcp/forecast'),
+    // Get forecast (all projects or specific project)
+    getForecast: (params = {}) => this.client.get('/gcp/forecast', { params }),
     
-    // Get summary
+    // Get summary (aggregated across all projects)
     getSummary: () => this.client.get('/gcp/summary'),
     
-    // Health check
-    getHealth: () => this.client.get('/gcp/health'),
-    
-    // Get billing account info
-    getBillingAccount: () => this.client.get('/gcp/billing-account')
+    // Get billing account info (requires projectId)
+    getBillingAccount: (projectId) => this.client.get('/gcp/billing-account', { params: { projectId } })
   };
 
   /**
@@ -204,11 +213,20 @@ class ApiService {
     // Get all connected accounts
     getAll: () => this.client.get('/accounts'),
     
+    // Add AWS account
+    addAWS: (accountData) => this.client.post('/accounts/aws', accountData),
+    
+    // Add Azure subscription
+    addAzure: (subscriptionData) => this.client.post('/accounts/azure', subscriptionData),
+    
+    // Add GCP project
+    addGCP: (projectData) => this.client.post('/accounts/gcp', projectData),
+    
     // Test account connection
     testConnection: (accountId) => this.client.put(`/accounts/${accountId}/test`),
     
     // Remove account connection
-    disconnect: (accountId) => this.client.delete(`/accounts/${accountId}`)
+    removeAccount: (accountId) => this.client.delete(`/accounts/${accountId}`)
   };
 
   /**

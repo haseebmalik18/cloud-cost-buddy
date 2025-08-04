@@ -142,6 +142,30 @@ const CloudCard = ({
           </View>
         )}
 
+        {/* Multi-Account Summary */}
+        {data.accountCount && data.accountCount > 1 && (
+          <View style={styles.accountsSection}>
+            <Text variant="bodySmall" style={styles.accountsLabel}>
+              {data.accountCount} accounts connected
+            </Text>
+            {data.accounts && data.accounts.slice(0, 2).map((account, index) => (
+              <View key={index} style={styles.accountItem}>
+                <Text variant="bodySmall" style={styles.accountName}>
+                  {account.accountName}
+                </Text>
+                <Text variant="bodySmall" style={styles.accountCost}>
+                  {formatCurrency(account.totalCost, data.currency)}
+                </Text>
+              </View>
+            ))}
+            {data.accountCount > 2 && (
+              <Text variant="bodySmall" style={styles.moreAccounts}>
+                +{data.accountCount - 2} more accounts
+              </Text>
+            )}
+          </View>
+        )}
+
         {data.topServices && data.topServices.length > 0 && (
           <View style={styles.servicesSection}>
             <Text variant="bodySmall" style={styles.servicesLabel}>
@@ -207,6 +231,30 @@ const styles = StyleSheet.create({
   progressBar: {
     height: 6,
     borderRadius: 3
+  },
+  accountsSection: {
+    marginBottom: 16
+  },
+  accountsLabel: {
+    fontWeight: 'bold',
+    marginBottom: 8,
+    opacity: 0.8
+  },
+  accountItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 2
+  },
+  accountName: {
+    flex: 1
+  },
+  accountCost: {
+    fontWeight: '500'
+  },
+  moreAccounts: {
+    fontStyle: 'italic',
+    opacity: 0.7,
+    marginTop: 4
   },
   servicesSection: {
     marginBottom: 12
