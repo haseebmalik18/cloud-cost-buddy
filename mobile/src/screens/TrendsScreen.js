@@ -76,7 +76,7 @@ const TrendsScreen = ({ navigation }) => {
       }
 
     } catch (err) {
-      console.error('Trends fetch error:', err);
+      // console.error('Trends fetch error:', err);
       setError(err.message || 'Failed to fetch trends data');
       setSnackbarVisible(true);
     } finally {

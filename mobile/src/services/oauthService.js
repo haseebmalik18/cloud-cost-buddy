@@ -48,7 +48,7 @@ class OAuthService {
         throw new Error(`OAuth failed: ${result.type}`);
       }
     } catch (error) {
-      console.error(`OAuth error for ${provider}:`, error);
+      // OAuth error handled by caller
       throw error;
     } finally {
       this.currentProvider = null;
@@ -98,7 +98,7 @@ class OAuthService {
         }
       };
     } catch (error) {
-      console.error('Token exchange error:', error);
+      // Token exchange error handled by caller
       throw new Error(`Failed to complete OAuth flow: ${error.message}`);
     }
   }
@@ -272,7 +272,7 @@ class OAuthService {
         }
       };
     } catch (error) {
-      console.error(`Token refresh error for ${provider}:`, error);
+      // Token refresh error handled by caller
       throw new Error(`Failed to refresh tokens: ${error.message}`);
     }
   }

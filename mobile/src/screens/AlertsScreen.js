@@ -54,7 +54,7 @@ const AlertsScreen = ({ navigation }) => {
       const response = await apiService.get('/alerts');
       setAlerts(response.data || []);
     } catch (err) {
-      console.error('Error fetching alerts:', err);
+      // console.error('Error fetching alerts:', err);
       setError(err.message || 'Failed to fetch alerts');
       setSnackbarVisible(true);
     } finally {
@@ -69,7 +69,7 @@ const AlertsScreen = ({ navigation }) => {
       const response = await apiService.get('/alerts/history');
       setAlertHistory(response.data || []);
     } catch (err) {
-      console.error('Error fetching alert history:', err);
+      // console.error('Error fetching alert history:', err);
     }
   };
 
@@ -99,7 +99,7 @@ const AlertsScreen = ({ navigation }) => {
       setThresholdPercentage('20');
       setEnabled(true);
     } catch (err) {
-      console.error('Error creating alert:', err);
+      // console.error('Error creating alert:', err);
       setError(err.message || 'Failed to create alert');
       setSnackbarVisible(true);
     }
@@ -111,7 +111,7 @@ const AlertsScreen = ({ navigation }) => {
       await apiService.put(`/alerts/${alertId}`, { enabled: !currentEnabled });
       fetchAlerts();
     } catch (err) {
-      console.error('Error updating alert:', err);
+      // console.error('Error updating alert:', err);
       setError(err.message || 'Failed to update alert');
       setSnackbarVisible(true);
     }
@@ -132,7 +132,7 @@ const AlertsScreen = ({ navigation }) => {
               await apiService.delete(`/alerts/${alertId}`);
               fetchAlerts();
             } catch (err) {
-              console.error('Error deleting alert:', err);
+              // console.error('Error deleting alert:', err);
               setError(err.message || 'Failed to delete alert');
               setSnackbarVisible(true);
             }
@@ -148,7 +148,7 @@ const AlertsScreen = ({ navigation }) => {
       await apiService.post('/alerts/test-notification');
       Alert.alert('Success', 'Test notification sent!');
     } catch (err) {
-      console.error('Error sending test notification:', err);
+      // console.error('Error sending test notification:', err);
       setError(err.message || 'Failed to send test notification');
       setSnackbarVisible(true);
     }

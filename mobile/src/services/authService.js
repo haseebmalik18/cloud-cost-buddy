@@ -39,7 +39,7 @@ class AuthService {
 
       this.isInitialized = true;
     } catch (error) {
-      console.error('AuthService initialization error:', error);
+      // console.error('AuthService initialization error:', error);
       this.isInitialized = true;
     }
   }
@@ -73,7 +73,7 @@ class AuthService {
         throw new Error(response.data.message || 'Registration failed');
       }
     } catch (error) {
-      console.error('Registration error:', error);
+      // console.error('Registration error:', error);
       throw error;
     }
   }
@@ -93,7 +93,7 @@ class AuthService {
         throw new Error(response.data.message || 'Login failed');
       }
     } catch (error) {
-      console.error('Login error:', error);
+      // console.error('Login error:', error);
       throw error;
     }
   }
@@ -108,7 +108,7 @@ class AuthService {
         await apiService.auth.logout();
       }
     } catch (error) {
-      console.error('Logout API error:', error);
+      // console.error('Logout API error:', error);
       // Continue with local logout even if API call fails
     }
 
@@ -132,7 +132,7 @@ class AuthService {
         throw new Error(response.data.message || 'Profile update failed');
       }
     } catch (error) {
-      console.error('Profile update error:', error);
+      // console.error('Profile update error:', error);
       throw error;
     }
   }
@@ -154,7 +154,7 @@ class AuthService {
         throw new Error(response.data.message || 'AWS connection failed');
       }
     } catch (error) {
-      console.error('AWS connection error:', error);
+      // console.error('AWS connection error:', error);
       throw error;
     }
   }
@@ -176,7 +176,7 @@ class AuthService {
         throw new Error(response.data.message || 'Azure connection failed');
       }
     } catch (error) {
-      console.error('Azure connection error:', error);
+      // console.error('Azure connection error:', error);
       throw error;
     }
   }
@@ -199,7 +199,7 @@ class AuthService {
         throw new Error(response.data.message || 'GCP connection failed');
       }
     } catch (error) {
-      console.error('GCP connection error:', error);
+      // console.error('GCP connection error:', error);
       throw error;
     }
   }
@@ -213,7 +213,7 @@ class AuthService {
       const result = await oauthService.initiateOAuth(provider);
       return result;
     } catch (error) {
-      console.error(`${provider} OAuth initiation error:`, error);
+      // console.error(`${provider} OAuth initiation error:`, error);
       throw error;
     }
   }
@@ -268,7 +268,7 @@ class AuthService {
 
       return result;
     } catch (error) {
-      console.error('OAuth redirect handling error:', error);
+      // console.error('OAuth redirect handling error:', error);
       throw error;
     }
   }
@@ -346,7 +346,7 @@ class AuthService {
         throw new Error('Token refresh failed');
       }
     } catch (error) {
-      console.error('Token refresh error:', error);
+      // console.error('Token refresh error:', error);
       await this.logout();
       throw error;
     }

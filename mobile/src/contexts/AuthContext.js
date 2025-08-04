@@ -49,7 +49,7 @@ export const AuthProvider = ({ children }) => {
         }
       }
     } catch (error) {
-      console.error('Auth initialization error:', error);
+      // console.error('Auth initialization error:', error);
       // Clear any invalid auth data
       await authService.logout();
     } finally {
@@ -67,7 +67,7 @@ export const AuthProvider = ({ children }) => {
       }
       throw new Error('Login failed');
     } catch (error) {
-      console.error('Login error:', error);
+      // console.error('Login error:', error);
       throw error;
     }
   };
@@ -82,7 +82,7 @@ export const AuthProvider = ({ children }) => {
       }
       throw new Error('Registration failed');
     } catch (error) {
-      console.error('Registration error:', error);
+      // console.error('Registration error:', error);
       throw error;
     }
   };
@@ -93,7 +93,7 @@ export const AuthProvider = ({ children }) => {
       await authService.logout();
       setUser(null);
     } catch (error) {
-      console.error('Logout error:', error);
+      // console.error('Logout error:', error);
       // Clear user state even if logout API call fails
       setUser(null);
     }
@@ -109,7 +109,7 @@ export const AuthProvider = ({ children }) => {
       }
       throw new Error('Profile update failed');
     } catch (error) {
-      console.error('Profile update error:', error);
+      // console.error('Profile update error:', error);
       throw error;
     }
   };
@@ -154,7 +154,7 @@ export const AuthProvider = ({ children }) => {
       
       throw new Error(`Failed to connect ${provider}`);
     } catch (error) {
-      console.error('Connect cloud error:', error);
+      // console.error('Connect cloud error:', error);
       throw error;
     }
   };
@@ -170,7 +170,7 @@ export const AuthProvider = ({ children }) => {
       }
       return { success: true, user: currentUser };
     } catch (error) {
-      console.error('Refresh user error:', error);
+      // console.error('Refresh user error:', error);
       throw error;
     }
   };

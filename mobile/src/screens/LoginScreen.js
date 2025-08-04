@@ -113,7 +113,7 @@ const LoginScreen = ({ navigation }) => {
         }
       }
     } catch (error) {
-      console.error('Auth error:', error);
+      // console.error('Auth error:', error);
       setSnackbarMessage(error.message || 'Authentication failed');
       setSnackbarVisible(true);
     } finally {

@@ -29,7 +29,7 @@ const DashboardScreen = ({ navigation }) => {
       setDashboardData(response.data.data);
 
     } catch (err) {
-      console.error('Dashboard fetch error:', err);
+      // console.error('Dashboard fetch error:', err);
       setError(err.message || 'Failed to fetch dashboard data');
       setSnackbarVisible(true);
     } finally {

@@ -61,7 +61,7 @@ const ConnectCloudScreen = ({ navigation }) => {
         setConnectedAccounts(response.data.data.accounts || []);
       }
     } catch (error) {
-      console.error('Failed to fetch accounts:', error);
+      // console.error('Failed to fetch accounts:', error);
       setSnackbarMessage('Failed to fetch connected accounts');
       setSnackbarVisible(true);
     } finally {
@@ -107,7 +107,7 @@ const ConnectCloudScreen = ({ navigation }) => {
                   fetchConnectedAccounts();
                 }
               } catch (error) {
-                console.error(`${provider.id} OAuth error:`, error);
+                // console.error(`${provider.id} OAuth error:`, error);
                 setSnackbarMessage(`Failed to connect ${provider.name}: ${error.message}`);
                 setSnackbarVisible(true);
               } finally {
@@ -119,7 +119,7 @@ const ConnectCloudScreen = ({ navigation }) => {
         ]
       );
     } catch (error) {
-      console.error('Connect provider error:', error);
+      // console.error('Connect provider error:', error);
       setSnackbarMessage(`Failed to connect ${provider.name}: ${error.message}`);
       setSnackbarVisible(true);
       setLoading(false);
@@ -143,7 +143,7 @@ const ConnectCloudScreen = ({ navigation }) => {
               setSnackbarVisible(true);
               fetchConnectedAccounts();
             } catch (error) {
-              console.error('Disconnect error:', error);
+              // console.error('Disconnect error:', error);
               setSnackbarMessage('Failed to disconnect account');
               setSnackbarVisible(true);
             }
@@ -165,7 +165,7 @@ const ConnectCloudScreen = ({ navigation }) => {
       }
       setSnackbarVisible(true);
     } catch (error) {
-      console.error('Test connection error:', error);
+      // console.error('Test connection error:', error);
       setSnackbarMessage('Connection test failed');
       setSnackbarVisible(true);
     } finally {

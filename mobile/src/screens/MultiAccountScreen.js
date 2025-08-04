@@ -80,7 +80,7 @@ const MultiAccountScreen = ({ navigation }) => {
       setAccounts(newAccounts);
 
     } catch (err) {
-      console.error('Multi-account fetch error:', err);
+      // console.error('Multi-account fetch error:', err);
       setError(err.message || 'Failed to fetch accounts');
       setSnackbarVisible(true);
     } finally {
